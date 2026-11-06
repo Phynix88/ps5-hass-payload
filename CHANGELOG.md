@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.3.1
+
+- Client labels: control characters become spaces when pairing, in the log and in the grant text on the TV.
+- Permission log lines name the client (`permissions: granted power off (by "Home Assistant")`).
+- 403 messages for rest mode, power off and fan control name the Home Assistant options as the first way.
+
 ## v0.3.0
 
 - Grant rest mode, power off and the fan threshold from a paired client with a code shown on the TV:
