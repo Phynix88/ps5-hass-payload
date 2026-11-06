@@ -201,7 +201,8 @@ typedef enum {
   R_LAUNCH,
   R_CLOSE,
   R_STANDBY,
-  R_NOTIFY
+  R_NOTIFY,
+  R_POWER_OFF
 } route_id;
 
 /* Fills id (the <ID> path segment) for icon/launch. */
@@ -221,6 +222,7 @@ static route_id match(const char *path, http_method *want, char *id,
       {PREFIX "/apps/running/close", HM_POST, R_CLOSE},
       {PREFIX "/power/standby", HM_POST, R_STANDBY},
       {PREFIX "/notify", HM_POST, R_NOTIFY},
+      {PREFIX "/power/off", HM_POST, R_POWER_OFF},
   };
   const char *apps = PREFIX "/apps/";
   size_t alen = strlen(apps);
@@ -518,6 +520,24 @@ static void h_standby(route_ctx *ctx, route_resp *out) {
   }
 }
 
+static void h_power_off(route_ctx *ctx, route_resp *out) {
+  int rc = 0;
+  switch (control_power_off(ctx->cfg, &rc)) {
+  case CTL_OK:
+    ok(out);
+    done(out);
+    return;
+  case CTL_DISABLED:
+    fail(out, 403, "power_off_disabled", "set power_off to true in config.json");
+    return;
+  case CTL_RATE_LIMITED:
+    fail_retry(out, 429, "rate_limited", "at most one power request per 10 s", rc);
+    return;
+  default:
+    system_error(out, rc);
+  }
+}
+
 static void h_notify(const jr_t *r, route_resp *out) {
   char msg[PS5H_MAX_BODY];
   int retry = 0;
@@ -616,6 +636,7 @@ void route(route_ctx *ctx, const http_req *req, uint32_t peer,
   case R_CLOSE: h_close(&body, out); break;
   case R_STANDBY: h_standby(ctx, out); break;
   case R_NOTIFY: h_notify(&body, out); break;
+  case R_POWER_OFF: h_power_off(ctx, out); break;
   default: fail(out, 404, "not_found", "unknown path");
   }
 }

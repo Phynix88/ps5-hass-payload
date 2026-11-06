@@ -130,3 +130,25 @@ ctl_rc control_notify(const char *utf8, int *retry_after) {
   notify_next = (notify_next + 1) % PS5H_NOTIFY_BURST;
   return CTL_OK;
 }
+
+ctl_rc control_power_off(const config *c, int *rc_out) {
+  int64_t now = plat_mono_ms();
+  int rc;
+  *rc_out = 0;
+  if (!c->power_off) {
+    return CTL_DISABLED;
+  }
+  if (standby_done && now - standby_last_ms < PS5H_STANDBY_INTERVAL_S * 1000) {
+    *rc_out = (int)((standby_last_ms + PS5H_STANDBY_INTERVAL_S * 1000 - now + 999) / 1000);
+    return CTL_RATE_LIMITED;
+  }
+  standby_done = true;
+  standby_last_ms = now;
+  log_msg("powering off");
+  if ((rc = plat_power_off()) < 0) {
+    *rc_out = rc;
+    log_error("power off failed rc=%d", rc);
+    return CTL_SYSTEM_ERROR;
+  }
+  return CTL_OK;
+}

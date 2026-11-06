@@ -28,7 +28,7 @@ void fake_reset(void) {
   snprintf(fake.firmware, sizeof(fake.firmware), "13.60");
   fake.ipv4[0] = 0x0100007f + 0x01000000; /* any non-loopback value */
   fake.n_ipv4 = 1;
-  fake.caps = (plat_caps){true, true, true, true, true, true};
+  fake.caps = (plat_caps){true, true, true, true, true, true, true, true};
 }
 
 void fake_init_from_env(void) {
@@ -166,3 +166,14 @@ int plat_ipv4_list(uint32_t *addrs, int max) {
 }
 
 plat_caps plat_capabilities(void) { return fake.caps; }
+
+int plat_proc_names(plat_name *names, int max) {
+  int n = fake.n_procs < max ? fake.n_procs : max;
+  memcpy(names, fake.procs, (size_t)n * sizeof(plat_name));
+  return n;
+}
+
+int plat_power_off(void) {
+  fake.power_off_calls++;
+  return fake.power_off_rc;
+}

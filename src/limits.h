@@ -36,6 +36,14 @@
 #define PS5H_NOTIFY_MAX          200 /* bytes of a TV message */
 #define PS5H_NOTIFY_BURST        5   /* messages ... */
 #define PS5H_NOTIFY_WINDOW_S     30  /* ... per sliding window */
+#define PS5H_MAX_PAYLOADS        32
+#define PS5H_FAN_MIN_C           45  /* thresholds we may set (as ps5upload) */
+#define PS5H_FAN_MAX_C           85
+#define PS5H_FAN_STOCK_MIN_C     45  /* plausible factory values */
+#define PS5H_FAN_STOCK_MAX_C     100
+#define PS5H_FAN_CHECK_S         5
+#define PS5H_FAN_MAX_FAILS       5
+#define PS5H_MAX_PROCS           512 /* process names read per scan */
 #define PS5H_DATA_DIR            "/data/ps5-hass"
 
 #endif

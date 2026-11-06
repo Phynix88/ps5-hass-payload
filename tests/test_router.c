@@ -436,6 +436,17 @@ static void test_notify_codes(void) {
   T_EQ_INT(call("GET", "/api/v1/notify", NULL), 405);
 }
 
+static void test_power_off_codes(void) {
+  setup();
+  pair();
+  T_EQ_INT(call("POST", "/api/v1/power/off", "{}"), 403);
+  T_ASSERT(strstr(body, "\"error\":\"power_off_disabled\""));
+  cfg.power_off = true;
+  T_EQ_INT(call("POST", "/api/v1/power/off", "{}"), 200);
+  T_EQ_INT(fake.power_off_calls, 1);
+  T_EQ_INT(call("POST", "/api/v1/power/off", "{}"), 429);
+}
+
 int main(void) {
   T_RUN(test_origin_blocked_before_everything);
   T_RUN(test_post_requires_json_and_marker);
@@ -461,6 +472,7 @@ int main(void) {
   T_RUN(test_alloc_failure_is_500_internal);
   T_RUN(test_apps_rescanned_on_change);
   T_RUN(test_notify_codes);
+  T_RUN(test_power_off_codes);
   apps_free(&apps);
   T_MAIN();
 }

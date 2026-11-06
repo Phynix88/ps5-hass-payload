@@ -4,6 +4,8 @@
 #include <string.h>
 
 #include "auth.h"
+#include "limits.h"
+#include "procs.h"
 #include "log.h"
 #include "platform.h"
 
@@ -70,6 +72,16 @@ void state_json(jw_t *w, const app_list *apps, int64_t start_ms) {
   jw_int(w, (plat_mono_ms() - start_ms) / 1000);
   jw_key(w, "apps_etag");
   jw_cstr(w, apps->etag);
+  {
+    plat_name names[PS5H_MAX_PAYLOADS];
+    int n = procs_payloads(names, PS5H_MAX_PAYLOADS);
+    jw_key(w, "payloads");
+    jw_arr(w);
+    for (int i = 0; i < n; i++) {
+      jw_cstr(w, names[i]);
+    }
+    jw_end_arr(w);
+  }
 }
 
 void info_json(jw_t *w, const config *c, const char *device_id,
@@ -116,6 +128,10 @@ void info_json(jw_t *w, const config *c, const char *device_id,
   jw_bool(w, caps.standby);
   jw_key(w, "mdns");
   jw_bool(w, mdns_running);
+  jw_key(w, "power_off");
+  jw_bool(w, caps.power_off && c->power_off);
+  jw_key(w, "fan_control");
+  jw_bool(w, caps.fan_control && c->fan_control);
   jw_end_obj(w);
   jw_key(w, "last_error");
   if (err) {

@@ -194,6 +194,32 @@ static void test_notify_failure_500(void) {
   (void)rc;
 }
 
+static void test_power_off_disabled_by_default(void) {
+  int rc;
+  setup();
+  cfg.power_actions = true; /* rest mode allowed does not allow power off */
+  T_EQ_INT(control_power_off(&cfg, &rc), CTL_DISABLED);
+  T_EQ_INT(fake.power_off_calls, 0);
+}
+
+static void test_power_off_shares_rate_limit(void) {
+  int rc;
+  setup();
+  cfg.power_actions = true;
+  cfg.power_off = true;
+  T_EQ_INT(control_standby(&cfg, &rc), CTL_OK);
+  fake.mono_ms += 3000;
+  T_EQ_INT(control_power_off(&cfg, &rc), CTL_RATE_LIMITED);
+  T_EQ_INT(rc, 7);
+  fake.mono_ms += 7000;
+  T_EQ_INT(control_power_off(&cfg, &rc), CTL_OK);
+  T_EQ_INT(fake.power_off_calls, 1);
+  fake.mono_ms += 10000;
+  fake.power_off_rc = -4;
+  T_EQ_INT(control_power_off(&cfg, &rc), CTL_SYSTEM_ERROR);
+  T_EQ_INT(rc, -4);
+}
+
 int main(void) {
   T_RUN(test_launch_ok);
   T_RUN(test_launch_already_running);
@@ -214,6 +240,8 @@ int main(void) {
   T_RUN(test_notify_empty_rejected);
   T_RUN(test_notify_rate_limited);
   T_RUN(test_notify_failure_500);
+  T_RUN(test_power_off_disabled_by_default);
+  T_RUN(test_power_off_shares_rate_limit);
   apps_free(&apps);
   T_MAIN();
 }

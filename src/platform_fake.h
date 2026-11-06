@@ -30,6 +30,10 @@ struct fake_state {
   int n_ipv4;
   char root[512];
   plat_caps caps;
+  plat_name procs[32];
+  int n_procs;
+  int power_off_rc;
+  int power_off_calls;
 };
 
 extern struct fake_state fake;

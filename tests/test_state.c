@@ -116,7 +116,8 @@ static void test_info_fields_and_capabilities(void) {
                      "\"paired\":false,\"power_actions\":false,\"config\":\"ok\","));
   T_ASSERT(strstr(s, "\"capabilities\":{\"temps\":true,\"fan\":true,"
                      "\"notify\":true,\"random\":false,\"launch\":true,"
-                     "\"standby\":false,\"mdns\":true}"));
+                     "\"standby\":false,\"mdns\":true,\"power_off\":false,"
+                     "\"fan_control\":false}"));
   T_ASSERT(strstr(s, "\"last_error\":"));
 }
 
@@ -132,11 +133,39 @@ static void test_info_recovered_and_last_error(void) {
   T_ASSERT(strstr(s, "something broke\"}"));
 }
 
+static void test_state_payloads(void) {
+  jr_t r;
+  const char *s;
+  setup();
+  snprintf(fake.procs[0], 20, "kstuff.elf");
+  snprintf(fake.procs[1], 20, "SceSysCore.elf");
+  snprintf(fake.procs[2], 20, "ftpsrv.elf");
+  fake.n_procs = 3;
+  T_ASSERT((s = render_state(&r)));
+  T_ASSERT(strstr(s, "\"payloads\":[\"ftpsrv.elf\",\"kstuff.elf\"]"));
+}
+
+static void test_info_power_off_needs_permission(void) {
+  jr_t r;
+  const char *s;
+  setup();
+  T_ASSERT((s = render_info(&r)));
+  T_ASSERT(strstr(s, "\"power_off\":false"));
+  cfg.power_off = true;
+  T_ASSERT((s = render_info(&r)));
+  T_ASSERT(strstr(s, "\"power_off\":true"));
+  fake.caps.power_off = false;
+  T_ASSERT((s = render_info(&r)));
+  T_ASSERT(strstr(s, "\"power_off\":false"));
+}
+
 int main(void) {
   T_RUN(test_state_idle);
   T_RUN(test_state_running_named);
   T_RUN(test_state_all_sensors_fail);
   T_RUN(test_info_fields_and_capabilities);
+  T_RUN(test_state_payloads);
+  T_RUN(test_info_power_off_needs_permission);
   T_RUN(test_info_recovered_and_last_error);
   apps_free(&apps);
   T_MAIN();

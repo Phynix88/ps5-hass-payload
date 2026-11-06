@@ -222,6 +222,28 @@ static void test_log_error_kept(void) {
   T_ASSERT(strstr(log_last_error(), "bind failed rc=-5"));
 }
 
+static void test_config_new_fields_default_false(void) {
+  config c, d;
+  setup();
+  T_EQ_INT(config_load(&c), 0);
+  T_ASSERT(!c.power_off && !c.fan_control);
+  T_EQ_INT(c.fan_target_c, 0);
+  T_EQ_INT(c.fan_stock_c, 0);
+  c.power_off = true;
+  c.fan_control = true;
+  c.fan_target_c = 70;
+  c.fan_stock_c = 91;
+  T_EQ_INT(config_save(&c), 0);
+  T_EQ_INT(config_load(&d), 0);
+  T_ASSERT(d.power_off && d.fan_control);
+  T_EQ_INT(d.fan_target_c, 70);
+  T_EQ_INT(d.fan_stock_c, 91);
+  t_write_str(cfg_path, "{\"schema\":1,\"fan_target_c\":200,\"fan_stock_c\":-3}");
+  T_EQ_INT(config_load(&d), 0);
+  T_EQ_INT(d.fan_target_c, 0);
+  T_EQ_INT(d.fan_stock_c, 0);
+}
+
 int main(void) {
   T_RUN(test_missing_config_defaults);
   T_RUN(test_broken_config_renamed_and_notified);
@@ -237,5 +259,6 @@ int main(void) {
   T_RUN(test_device_id_without_random_fails);
   T_RUN(test_log_rotates_at_limit);
   T_RUN(test_log_error_kept);
+  T_RUN(test_config_new_fields_default_false);
   T_MAIN();
 }

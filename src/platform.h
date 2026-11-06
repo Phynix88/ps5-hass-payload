@@ -23,8 +23,11 @@ typedef struct {
 } plat_running;
 
 typedef struct {
-  bool notify, random, standby, fan, temps, language;
+  bool notify, random, standby, fan, temps, language, power_off, fan_control;
 } plat_caps;
+
+/* Process names are at most 19 characters (FreeBSD COMMLEN). */
+typedef char plat_name[20];
 
 /* User service, process name, kill an older instance. */
 int plat_init(void);
@@ -62,5 +65,9 @@ void plat_firmware(char out[16]);
 int plat_ipv4_list(uint32_t *addrs, int max);
 /* What resolved on first use. */
 plat_caps plat_capabilities(void);
+/* Names (ki_comm) of all processes; returns the count. */
+int plat_proc_names(plat_name *names, int max);
+/* Power the console off (not rest mode). */
+int plat_power_off(void);
 
 #endif
