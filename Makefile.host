@@ -24,7 +24,7 @@ TESTS   := $(patsubst tests/%.c,build/tests/%,$(wildcard tests/test_*.c))
 .PHONY: test fuzz host e2e clean
 
 test: $(TESTS)
-	@set -e; for t in $(TESTS); do $$t; done
+	@set -e; for t in $(TESTS); do ASAN_OPTIONS=strict_string_checks=1 $$t; done
 
 build/tests/%: tests/%.c $(SRC_LIB) $(HEADERS)
 	@mkdir -p $(dir $@)
@@ -32,3 +32,23 @@ build/tests/%: tests/%.c $(SRC_LIB) $(HEADERS)
 
 clean:
 	rm -rf build
+
+# --- fuzzing (needs a clang with libFuzzer, e.g. nixpkgs clang on Linux) ---
+FUZZ_CC ?= clang
+FUZZ_FLAGS := -std=c11 -g -O1 -fsanitize=fuzzer,address,undefined \
+              -D_DEFAULT_SOURCE -Isrc -Ithird_party/jsmn \
+              -DPS5H_VERSION=\"fuzz\" -DPS5H_COMMIT=\"fuzz\"
+FUZZERS := $(patsubst tests/fuzz/%.c,build/fuzz/%,$(wildcard tests/fuzz/fuzz_*.c))
+
+build/fuzz/%: tests/fuzz/%.c $(SRC_LIB) $(HEADERS)
+	@mkdir -p $(dir $@)
+	$(FUZZ_CC) $(FUZZ_FLAGS) -o $@ $< $(SRC_LIB) -lpthread
+
+fuzz: $(FUZZERS)
+	@set -e; for f in $(FUZZERS); do \
+	  n=$$(basename $$f); c=tests/fuzz/corpus/$${n#fuzz_}; mkdir -p $$c build/fuzz/new-$$n; \
+	  echo "== $$n ($(FUZZ_SECONDS) s)"; \
+	  if ! $$f -max_total_time=$(FUZZ_SECONDS) -max_len=16384 build/fuzz/new-$$n $$c \
+	       > build/fuzz/$$n.log 2>&1; then tail -40 build/fuzz/$$n.log; exit 1; fi; \
+	  tail -2 build/fuzz/$$n.log; \
+	done

@@ -1,0 +1,7 @@
+POST /api/v1/pair/finish HTTP/1.1
+Host: 10.0.0.2
+Content-Type: application/json
+X-PS5-Hass: 1
+Content-Length: 2
+
+{}
