@@ -34,6 +34,10 @@ struct fake_state {
   int n_procs;
   int power_off_rc;
   int power_off_calls;
+  int fan_value;   /* what the "device" holds */
+  int fan_get_rc;
+  int fan_set_rc;
+  int fan_set_calls;
 };
 
 extern struct fake_state fake;

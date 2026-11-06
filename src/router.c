@@ -12,6 +12,7 @@
 
 #include "auth.h"
 #include "control.h"
+#include "fan.h"
 #include "limits.h"
 #include "log.h"
 #include "mdns.h"
@@ -202,7 +203,8 @@ typedef enum {
   R_CLOSE,
   R_STANDBY,
   R_NOTIFY,
-  R_POWER_OFF
+  R_POWER_OFF,
+  R_FAN
 } route_id;
 
 /* Fills id (the <ID> path segment) for icon/launch. */
@@ -223,6 +225,7 @@ static route_id match(const char *path, http_method *want, char *id,
       {PREFIX "/power/standby", HM_POST, R_STANDBY},
       {PREFIX "/notify", HM_POST, R_NOTIFY},
       {PREFIX "/power/off", HM_POST, R_POWER_OFF},
+      {PREFIX "/fan", HM_POST, R_FAN},
   };
   const char *apps = PREFIX "/apps/";
   size_t alen = strlen(apps);
@@ -352,8 +355,11 @@ static void h_revoke(route_resp *out, int slot) {
 }
 
 static void h_state(route_ctx *ctx, route_resp *out) {
+  jw_t *w;
   apps_refresh(ctx->apps);
-  state_json(ok(out), ctx->apps, ctx->start_mono_ms);
+  w = ok(out);
+  state_json(w, ctx->apps, ctx->start_mono_ms);
+  fan_json(w, ctx->cfg);
   done(out);
 }
 
@@ -520,6 +526,34 @@ static void h_standby(route_ctx *ctx, route_resp *out) {
   }
 }
 
+static void h_fan(route_ctx *ctx, const jr_t *r, route_resp *out) {
+  int64_t value;
+  int rc = 0;
+  jw_t *w;
+  if (!jr_int(r, jr_get(r, 0, "threshold_c"), &value) || value < 0 || value > 200) {
+    fail(out, 400, "bad_request", "threshold_c must be 45..85 or 0");
+    return;
+  }
+  switch (fan_set(ctx->cfg, (int)value, &rc)) {
+  case FAN_OK:
+    w = ok(out);
+    fan_json(w, ctx->cfg);
+    done(out);
+    return;
+  case FAN_DISABLED:
+    fail(out, 403, "fan_control_disabled", "set fan_control to true in config.json");
+    return;
+  case FAN_BAD_VALUE:
+    fail(out, 400, "bad_request", "threshold_c must be 45..85 or 0");
+    return;
+  case FAN_ABOVE_STOCK:
+    fail(out, 409, "fan_above_stock", "above the console's own threshold");
+    return;
+  default:
+    system_error(out, rc);
+  }
+}
+
 static void h_power_off(route_ctx *ctx, route_resp *out) {
   int rc = 0;
   switch (control_power_off(ctx->cfg, &rc)) {
@@ -637,6 +671,7 @@ void route(route_ctx *ctx, const http_req *req, uint32_t peer,
   case R_STANDBY: h_standby(ctx, out); break;
   case R_NOTIFY: h_notify(&body, out); break;
   case R_POWER_OFF: h_power_off(ctx, out); break;
+  case R_FAN: h_fan(ctx, &body, out); break;
   default: fail(out, 404, "not_found", "unknown path");
   }
 }

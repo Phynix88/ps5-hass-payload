@@ -7,6 +7,7 @@
 #include "auth.h"
 #include "config.h"
 #include "control.h"
+#include "fan.h"
 #include "http.h"
 #include "json.h"
 #include "platform_fake.h"
@@ -447,6 +448,28 @@ static void test_power_off_codes(void) {
   T_EQ_INT(call("POST", "/api/v1/power/off", "{}"), 429);
 }
 
+static void test_fan_codes(void) {
+  setup();
+  pair();
+  T_EQ_INT(call("POST", "/api/v1/fan", "{\"threshold_c\":70}"), 403);
+  T_ASSERT(strstr(body, "\"error\":\"fan_control_disabled\""));
+  cfg.fan_control = true;
+  fake.fan_value = 91;
+  fan_init(&cfg);
+  T_EQ_INT(call("POST", "/api/v1/fan", "{\"threshold_c\":70}"), 200);
+  T_ASSERT(strstr(body, "\"target_c\":70"));
+  T_EQ_INT(fake.fan_value, 70);
+  T_EQ_INT(call("POST", "/api/v1/fan", "{\"threshold_c\":95}"), 400);
+  T_EQ_INT(call("POST", "/api/v1/fan", "{\"threshold_c\":\"x\"}"), 400);
+  cfg.fan_stock_c = 80;
+  T_EQ_INT(call("POST", "/api/v1/fan", "{\"threshold_c\":84}"), 409);
+  T_ASSERT(strstr(body, "\"error\":\"fan_above_stock\""));
+  T_EQ_INT(call("POST", "/api/v1/fan", "{\"threshold_c\":0}"), 200);
+  T_EQ_INT(fake.fan_value, 80);
+  T_EQ_INT(call("GET", "/api/v1/state", NULL), 200);
+  T_ASSERT(strstr(body, "\"fan\":{\"target_c\":null,\"current_c\":80,\"stock_c\":80}"));
+}
+
 int main(void) {
   T_RUN(test_origin_blocked_before_everything);
   T_RUN(test_post_requires_json_and_marker);
@@ -473,6 +496,7 @@ int main(void) {
   T_RUN(test_apps_rescanned_on_change);
   T_RUN(test_notify_codes);
   T_RUN(test_power_off_codes);
+  T_RUN(test_fan_codes);
   apps_free(&apps);
   T_MAIN();
 }

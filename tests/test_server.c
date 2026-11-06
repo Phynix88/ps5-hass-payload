@@ -12,6 +12,7 @@
 #include "auth.h"
 #include "config.h"
 #include "control.h"
+#include "fan.h"
 #include "platform_fake.h"
 #include "router.h"
 #include "server.h"
@@ -385,6 +386,21 @@ static void test_server_bind_busy_retries_and_notifies_once(void) {
   server_free(s);
 }
 
+static void test_fan_tick_runs(void) {
+  int rc;
+  server *s = setup(0);
+  cfg.fan_control = true;
+  fake.fan_value = 91;
+  fan_init(&cfg);
+  fan_set(&cfg, 70, &rc);
+  fake.fan_value = 91; /* the console reset it */
+  fake.mono_ms += 6000;
+  fake.wall_s += 6;
+  pump(s, 2);
+  T_EQ_INT(fake.fan_value, 70);
+  server_free(s);
+}
+
 int main(void) {
   signal(SIGPIPE, SIG_IGN);
   T_RUN(test_server_answers_info);
@@ -399,6 +415,7 @@ int main(void) {
   T_RUN(test_server_suspend_gap_rebinds);
   T_RUN(test_server_iface_change_rebinds);
   T_RUN(test_server_accept_error_rebinds_with_backoff);
+  T_RUN(test_fan_tick_runs);
   apps_free(&apps);
   T_MAIN();
 }

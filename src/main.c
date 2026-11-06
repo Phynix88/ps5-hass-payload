@@ -9,6 +9,7 @@
 #include "auth.h"
 #include "config.h"
 #include "control.h"
+#include "fan.h"
 #include "log.h"
 #include "mdns.h"
 #include "platform.h"
@@ -44,6 +45,7 @@ int main(void) {
   }
   auth_init(&cfg);
   control_init();
+  fan_init(&cfg);
   apps_scan(&apps);
 
   ctx.cfg = &cfg;

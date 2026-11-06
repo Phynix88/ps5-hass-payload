@@ -27,6 +27,7 @@ void fake_reset(void) {
   snprintf(fake.model, sizeof(fake.model), "CFI-TEST");
   snprintf(fake.firmware, sizeof(fake.firmware), "13.60");
   fake.ipv4[0] = 0x0100007f + 0x01000000; /* any non-loopback value */
+  fake.fan_value = 91;
   fake.n_ipv4 = 1;
   fake.caps = (plat_caps){true, true, true, true, true, true, true, true};
 }
@@ -171,6 +172,23 @@ int plat_proc_names(plat_name *names, int max) {
   int n = fake.n_procs < max ? fake.n_procs : max;
   memcpy(names, fake.procs, (size_t)n * sizeof(plat_name));
   return n;
+}
+
+int plat_fan_get(int *target_c) {
+  if (fake.fan_get_rc < 0) {
+    return fake.fan_get_rc;
+  }
+  *target_c = fake.fan_value;
+  return 0;
+}
+
+int plat_fan_set(int target_c) {
+  fake.fan_set_calls++;
+  if (fake.fan_set_rc < 0) {
+    return fake.fan_set_rc;
+  }
+  fake.fan_value = target_c;
+  return 0;
 }
 
 int plat_power_off(void) {

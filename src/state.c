@@ -5,6 +5,7 @@
 
 #include "auth.h"
 #include "limits.h"
+#include "fan.h"
 #include "procs.h"
 #include "log.h"
 #include "platform.h"

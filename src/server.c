@@ -13,6 +13,7 @@
 #include <unistd.h>
 
 #include "auth.h"
+#include "fan.h"
 #include "http.h"
 #include "limits.h"
 #include "log.h"
@@ -421,6 +422,7 @@ int server_step(server *s, int timeout_ms) {
   int n = 0, rc;
 
   periodic(s, now);
+  fan_tick(s->ctx->cfg, now);
   ensure_listener(s, now);
   deadlines(s, now);
 

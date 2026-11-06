@@ -69,5 +69,8 @@ plat_caps plat_capabilities(void);
 int plat_proc_names(plat_name *names, int max);
 /* Power the console off (not rest mode). */
 int plat_power_off(void);
+/* Fan threshold of the system driver in C (read/set). */
+int plat_fan_get(int *target_c);
+int plat_fan_set(int target_c);
 
 #endif
