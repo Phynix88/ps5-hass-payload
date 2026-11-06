@@ -13,12 +13,15 @@ uses the HTTP API described in [API.md](API.md).
 - Pairing with a code shown on the TV, like a smart TV.
 - Found automatically via mDNS; entering the IP address works too.
 
+![PS5 dashboard in Home Assistant](https://raw.githubusercontent.com/Phynix88/ps5-hass/main/docs/images/dashboard.png)
+
 ## Requirements
 
 - PS5 with a jailbreak and an ELF loader. Tested on firmware 13.60 (Relapse, kstuff-lite 1.11, Payload Manager
   0.6.3). Other firmware versions should work; functions the firmware lacks show up as `null` (see `capabilities` in
   `/api/v1/info`).
-- Home Assistant in the same local network.
+- Home Assistant in the same local network, with the [ps5-hass integration](https://github.com/Phynix88/ps5-hass)
+  (v0.3.0 or later for Console permissions).
 
 ## Installation
 
@@ -32,11 +35,28 @@ With the [Payload Manager](https://github.com/itsPLK/ps5-payload-manager) (teste
 4. Add it to the autoload and load it. It listens on port 8181. Updates show up in the same catalog.
 
 Or download `ps5-hass.elf` from the [releases](https://github.com/Phynix88/ps5-hass-payload/releases) (check it
-against `SHA256SUMS`) and load it with any ELF loader. A new start replaces a running copy.
+against `SHA256SUMS`) and send it to any ELF loader (elfldr listens on port 9021). A new start replaces a running
+copy. Without an autoload you load it again after every console restart; pairings and permissions are kept in
+`/data/ps5-hass/`.
+
+**Restarting the payload** (for example after editing `config.json`): load it again, from the Payload Manager or the
+ELF loader. The new copy replaces the running one.
+
+### Removal
+
+1. In Home Assistant turn fan control off (the console gets its factory threshold back) and delete the integration
+   while the payload runs (this frees the pairing slot).
+2. Payload Manager: take ps5-hass out of the autoload and uninstall it.
+3. Restart the console (or stop the process in the Payload Manager).
+4. Optionally delete `/data/ps5-hass/` over FTP.
+
+If the payload stops while a fan threshold is set, the threshold stays until the console resets it (at the latest
+after a restart).
 
 ## Pairing
 
-In Home Assistant add the integration. It finds "PS5 …" on its own, or you enter the IP address. The console shows
+Install the [ps5-hass integration](https://github.com/Phynix88/ps5-hass) first (HACS, see its README). Then add
+the integration in Home Assistant. It finds "PS5 …" on its own, or you enter the IP address. The console shows
 `ps5-hass pairing code: 123456` on the TV; type the code into Home Assistant within two minutes. The notification
 also appears with "Do Not Disturb" switched on.
 
@@ -46,8 +66,8 @@ are too early, Home Assistant tells you how long to wait). An expired code is re
 then do the same. You can also close the dialog and start again from **Settings → Devices & services**.
 
 - Each code works for 2 minutes and for 5 tries.
-- 10 wrong codes in a row lock pairing for 15 minutes (each further lock doubles, up to 24 hours). Wait, or restart
-  the payload on the console (the lock is kept in memory only).
+- 10 wrong codes in a row lock pairing for 15 minutes (each further lock doubles, up to 24 hours). Wait, or load the
+  payload again (the lock is kept in memory only).
 
 Without Home Assistant (for testing):
 
@@ -63,7 +83,7 @@ curl -s -H "Authorization: Bearer <token>" http://$PS5:8181/api/v1/state
 
 ## Configuration and reset
 
-Everything lives in `/data/ps5-hass/` on the console (reachable via FTP):
+Everything lives in `/data/ps5-hass/` on the console (reachable via FTP, port 2121 with ftpsrv):
 
 | File | Content |
 |---|---|
@@ -82,8 +102,11 @@ Everything lives in `/data/ps5-hass/` on the console (reachable via FTP):
   remembers the console's factory value in `fan_stock_c` (91 °C on FW 13.60) and never sets a higher one; allowed
   range 45–85 °C. `fan_target_c` is the threshold Home Assistant asked for (`0` = factory value). If the console
   resets the value, the payload sets it again; if another tool changes it, the payload stops and reports it in
-  `last_error`. To learn the factory value again, remove `fan_stock_c` while no threshold is set.
-- **Reset all pairings:** delete `config.json` and restart the payload.
+  `last_error`; setting a threshold again takes over again. To learn the factory value again, remove `fan_stock_c`
+  while no threshold is set and restart the payload.
+- **Reset all pairings:** delete `config.json` and restart the payload. This also resets the permissions, port,
+  allow list, host names and fan settings. To free a single slot, delete the integration in Home Assistant while the
+  console is on.
 - **Only allow certain addresses:** `"allow": ["192.168.1.0/24"]`. An invalid entry blocks everything, on purpose.
 - A broken `config.json` is set aside as `config.json.broken-<time>`; the TV shows a notice and you pair again.
 
@@ -106,6 +129,15 @@ Know these before you use it:
   fails, `capabilities.fan_control` is `false`.
 
 ## Problems
+
+- **Home Assistant cannot reach the payload with a host name:** only IP addresses and `.local` names are accepted;
+  add other names to `"hosts"` in `config.json`.
+- **Not found automatically:** mDNS does not cross subnets; enter the IP address.
+- **TV shows `ps5-hass: port 8181 busy, retrying`:** another payload uses the port. Stop it, or set `"port"` in
+  `config.json` and enter that port in Home Assistant.
+- **Gone after a console restart:** run the jailbreak again; the Payload Manager's autoload then starts ps5-hass.
+- **TV shows `ps5-hass: config was broken, pair again`:** see *Configuration and reset*; pair again.
+- **Payload Manager does not show the ps5-hass catalog:** switch on **Multiple Payload Sources** in its settings.
 
 Open an issue with the output of `curl http://<ps5>:8181/api/v1/info` (it contains `last_error` and
 `capabilities`, no secrets) and, if possible, `/data/ps5-hass/log.txt`.
