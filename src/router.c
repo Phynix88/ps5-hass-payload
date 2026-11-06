@@ -2,6 +2,7 @@
 #include "router.h"
 
 #include <arpa/inet.h>
+#include <sys/socket.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
