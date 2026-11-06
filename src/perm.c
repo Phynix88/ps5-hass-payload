@@ -107,8 +107,8 @@ int perm_apply(config *c, unsigned grant, unsigned revoke) {
     perm_text(before & ~after, text, sizeof(text));
     log_msg("permissions: revoked %s", text);
   }
-  if (fan_off) {
-    fan_release(c);
+  if (fan_off && target_before) {
+    fan_release(c); /* only if we had set a threshold */
   }
   return 0;
 }

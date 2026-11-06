@@ -16,8 +16,9 @@ void fan_init(config *c);
 /* 45..85 (never above the factory value) or 0 = back to the factory value.
  * rc_out: console code on FAN_SYSTEM_ERROR. Saves the target in config.json. */
 fan_rc fan_set(config *c, int target_c, int *rc_out);
-/* fan_control was taken away (config already saved with target 0): write
- * the factory value back if known; else, or if writing fails, log that the
+/* fan_control was taken away (config already saved with target 0) while we
+ * had a threshold set: write the factory value back if known, unless the
+ * watcher had given up because another tool controls the fan; else, or if writing fails, log that the
  * threshold stays until the console resets it. The watcher does nothing
  * afterwards because fan_control is false. */
 void fan_release(config *c);

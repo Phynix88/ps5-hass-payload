@@ -162,6 +162,30 @@ static void test_json_shape(void) {
   jw_free(&w);
 }
 
+static void test_revoke_fan_without_target_does_not_write(void) {
+  int calls;
+  setup();
+  T_EQ_INT(perm_apply(&cfg, PERM_FAN_CONTROL, 0), 0);
+  calls = fake.fan_set_calls;
+  fake.fan_value = 60; /* another tool set it; we never set a threshold */
+  T_EQ_INT(perm_apply(&cfg, 0, PERM_FAN_CONTROL), 0);
+  T_EQ_INT(fake.fan_set_calls, calls);
+  T_EQ_INT(fake.fan_value, 60);
+}
+
+static void test_revoke_fan_after_watcher_gave_up_does_not_write(void) {
+  int calls;
+  setup();
+  fan_on_at(70);
+  fake.fan_value = 60; /* another tool takes over: the watcher gives up */
+  fake.mono_ms += (PS5H_FAN_CHECK_S + 1) * 1000;
+  fan_tick(&cfg, fake.mono_ms);
+  calls = fake.fan_set_calls;
+  T_EQ_INT(perm_apply(&cfg, 0, PERM_FAN_CONTROL), 0);
+  T_EQ_INT(fake.fan_set_calls, calls);
+  T_EQ_INT(fake.fan_value, 60);
+}
+
 int main(void) {
   T_RUN(test_parse_valid_names);
   T_RUN(test_parse_rejects_empty_unknown_duplicate_nonarray);
@@ -174,5 +198,7 @@ int main(void) {
   T_RUN(test_apply_revoke_not_granted_no_fan_write);
   T_RUN(test_text_order);
   T_RUN(test_json_shape);
+  T_RUN(test_revoke_fan_without_target_does_not_write);
+  T_RUN(test_revoke_fan_after_watcher_gave_up_does_not_write);
   T_MAIN();
 }

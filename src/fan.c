@@ -165,7 +165,13 @@ void fan_json(jw_t *w, const config *c) {
 }
 
 void fan_release(config *c) {
+  bool other_tool = st.gave_up;
   reset_watch();
+  if (other_tool) {
+    /* another tool controls the fan: leave its value alone */
+    log_msg("fan: control given up, threshold left to the other tool");
+    return;
+  }
   if (c->fan_stock_c && write_value(c, c->fan_stock_c) >= 0) {
     log_msg("fan: threshold %d C (factory value)", c->fan_stock_c);
     return;
