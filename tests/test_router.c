@@ -18,7 +18,7 @@ static route_ctx ctx;
 static route_resp resp;
 static char token[65];
 static char body[65536];
-static const uint32_t PEER = 0xc0a83265; /* 192.168.50.101 */
+static const uint32_t PEER = 0xc0000214; /* 192.0.2.20 */
 
 static void setup(void) {
   char cmd[700];
@@ -45,7 +45,7 @@ static int call_full(const char *method, const char *path, const char *extra,
   char req[8192];
   http_req r;
   int n;
-  n = snprintf(req, sizeof(req), "%s %s HTTP/1.1\r\nHost: 192.168.50.228:8181\r\n",
+  n = snprintf(req, sizeof(req), "%s %s HTTP/1.1\r\nHost: 192.0.2.10:8181\r\n",
                method, path);
   if (token[0]) {
     n += snprintf(req + n, sizeof(req) - (size_t)n,
@@ -138,8 +138,8 @@ static int host_call(const char *host) {
 
 static void test_host_ip_local_and_listed_ok(void) {
   setup();
-  T_EQ_INT(host_call("192.168.50.228"), 200);
-  T_EQ_INT(host_call("192.168.50.228:8181"), 200);
+  T_EQ_INT(host_call("192.0.2.10"), 200);
+  T_EQ_INT(host_call("192.0.2.10:8181"), 200);
   T_EQ_INT(host_call("PS5-abc.LOCAL:8181"), 200);
   T_EQ_INT(host_call("ps5.lan"), 403);
   snprintf(cfg.hosts[0], sizeof(cfg.hosts[0]), "ps5.lan");
@@ -166,10 +166,10 @@ static void test_host_rebinding_blocked(void) {
 
 static void test_allow_cidr(void) {
   setup();
-  cfg.allow[0] = (cidr){0xc0a83200, 0xffffff00};
+  cfg.allow[0] = (cidr){0xc0000200, 0xffffff00};
   cfg.n_allow = 1;
-  T_EQ_INT(call_full("GET", "/api/v1/info", NULL, NULL, 0xc0a83265, true), 200);
-  T_EQ_INT(call_full("GET", "/api/v1/info", NULL, NULL, 0xc0a83365, true), 403);
+  T_EQ_INT(call_full("GET", "/api/v1/info", NULL, NULL, 0xc0000214, true), 200);
+  T_EQ_INT(call_full("GET", "/api/v1/info", NULL, NULL, 0xc6336414 /* 198.51.100.20 */, true), 403);
   T_ASSERT(strstr(body, "address_forbidden"));
 }
 

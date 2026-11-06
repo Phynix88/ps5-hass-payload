@@ -29,6 +29,9 @@
 #define PS5H_IFACE_CHECK_S       30
 #define PS5H_BIND_RETRY_S        10
 #define PS5H_WAKE_JUMP_S         5 /* wall vs. monotonic jump = woke up */
+#define PS5H_SUSPEND_GAP_S       15 /* loop pass gap = process was suspended */
+#define PS5H_REBIND_MIN_MS       1000 /* at most one rebind per second */
+#define PS5H_REBIND_LOG_S        60 /* at most one rebind log line per minute */
 #define PS5H_MAX_APPS            512
 #define PS5H_DATA_DIR            "/data/ps5-hass"
 

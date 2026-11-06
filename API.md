@@ -47,7 +47,7 @@ These checks run before anything else:
    answered.
 3. `Host` must be an IP address, a name ending in `.local`, or listed in `hosts` in `config.json` → otherwise
    `403 host_forbidden` (against DNS rebinding).
-4. When `allow` in `config.json` is not empty, only those addresses (`"192.168.50.0/24"`, `"192.168.50.101"`) are
+4. When `allow` in `config.json` is not empty, only those addresses (`"192.0.2.0/24"`, `"192.0.2.20"`) are
    accepted. An invalid `allow` entry blocks every address → `403 address_forbidden`.
 
 There are no CORS headers.

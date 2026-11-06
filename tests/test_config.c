@@ -57,7 +57,7 @@ static void test_valid_fields_loaded(void) {
   char buf[1024];
   setup();
   snprintf(buf, sizeof(buf),
-           "{\"schema\":1,\"port\":8182,\"allow\":[\"192.168.50.0/24\","
+           "{\"schema\":1,\"port\":8182,\"allow\":[\"192.0.2.0/24\","
            "\"10.0.0.5\"],\"hosts\":[\"ps5.lan\"],\"power_actions\":true,"
            "\"tokens\":[{\"token\":\"%s\",\"client_id\":"
            "\"0b7e2f1c-1111-4222-8333-944445555666\",\"label\":\"Home "
@@ -69,7 +69,7 @@ static void test_valid_fields_loaded(void) {
   T_ASSERT(!c.recovered && !c.allow_broken && c.power_actions);
   T_EQ_INT(c.port, 8182);
   T_EQ_INT(c.n_allow, 2);
-  T_EQ_INT(c.allow[0].net, 0xc0a83200); /* host byte order */
+  T_EQ_INT(c.allow[0].net, 0xc0000200); /* host byte order */
   T_EQ_INT(c.allow[0].mask, 0xffffff00);
   T_EQ_INT(c.allow[1].mask, 0xffffffff);
   T_EQ_INT(c.n_hosts, 1);

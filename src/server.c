@@ -41,9 +41,13 @@ struct server {
   route_ctx *ctx;
   uint16_t port, bound_port;
   int listen_fd;
-  bool tried_bind, bind_notified;
-  int64_t last_bind_ms;
+  bool bind_notified;
+  int64_t last_bind_ms, next_bind_ms; /* last attempt, earliest next one */
+  bool rebind_logged;
+  int64_t last_rebind_log_ms;
+  int64_t last_step_ms;
   int binds;
+  int fail_accept_err, fail_accept_count; /* tests */
   int64_t clock_offset_ms; /* wall - monotonic */
   int64_t last_iface_ms;
   uint32_t ifaces[MAX_IFACES];
@@ -68,7 +72,7 @@ server *server_new(route_ctx *ctx, uint16_t port) {
     s->conns[i].file_fd = -1;
   }
   s->clock_offset_ms = clock_offset();
-  s->last_iface_ms = plat_mono_ms();
+  s->last_iface_ms = s->last_step_ms = plat_mono_ms();
   s->n_ifaces = plat_ipv4_list(s->ifaces, MAX_IFACES);
   return s;
 }
@@ -109,6 +113,11 @@ void server_free(server *s) {
 }
 
 uint16_t server_bound_port(const server *s) { return s->bound_port; }
+
+void server_debug_fail_accept(server *s, int err, int count) {
+  s->fail_accept_err = err;
+  s->fail_accept_count = count;
+}
 
 void server_debug(const server *s, int *conns, int *binds) {
   int n = 0;
@@ -153,14 +162,11 @@ static int try_bind(server *s) {
 }
 
 static void ensure_listener(server *s, int64_t now) {
-  if (s->listen_fd >= 0) {
+  if (s->listen_fd >= 0 || now < s->next_bind_ms) {
     return;
   }
-  if (s->tried_bind && now - s->last_bind_ms < PS5H_BIND_RETRY_S * 1000) {
-    return;
-  }
-  s->tried_bind = true;
   s->last_bind_ms = now;
+  s->next_bind_ms = now + PS5H_BIND_RETRY_S * 1000; /* if this one fails */
   if (!try_bind(s)) {
     if (s->bind_notified) {
       log_msg("listening on port %u again", (unsigned)s->bound_port);
@@ -180,17 +186,45 @@ static void ensure_listener(server *s, int64_t now) {
   }
 }
 
-static void periodic(server *s, int64_t now) {
-  int64_t off = clock_offset();
-  if (llabs(off - s->clock_offset_ms) > PS5H_WAKE_JUMP_S * 1000) {
-    log_msg("woke up (clock jumped %lld s), rebinding",
-            (long long)((off - s->clock_offset_ms) / 1000));
-    s->clock_offset_ms = off;
+/* Close the listener (and optionally all connections) and bind again: after
+ * errors at most once per PS5H_REBIND_MIN_MS, logged at most once per
+ * PS5H_REBIND_LOG_S so a persistent error cannot flood the log. */
+static void rebind(server *s, int64_t now, bool drop_conns, bool is_error,
+                   const char *why) {
+  /* only error loops are slowed down; waking up rebinds at once */
+  int64_t earliest = is_error ? s->last_bind_ms + PS5H_REBIND_MIN_MS : now;
+  if (drop_conns) {
     for (int i = 0; i < PS5H_MAX_CONNS; i++) {
       conn_close(&s->conns[i]);
     }
-    close_listener(s);
-    s->tried_bind = false;
+  }
+  close_listener(s);
+  s->next_bind_ms = earliest > now ? earliest : now;
+  if (!s->rebind_logged || now - s->last_rebind_log_ms >= PS5H_REBIND_LOG_S * 1000) {
+    if (is_error) {
+      log_error("%s, rebinding", why);
+    } else {
+      log_msg("%s, rebinding", why);
+    }
+    s->rebind_logged = true;
+    s->last_rebind_log_ms = now;
+  }
+}
+
+static void periodic(server *s, int64_t now) {
+  int64_t off = clock_offset();
+  int64_t gap = now - s->last_step_ms;
+  s->last_step_ms = now;
+  /* Two signs of waking up: the wall clock jumped against the monotonic one,
+   * or the loop (which runs at least once a second) was not scheduled for a
+   * long time. On the PS5 only the second works: its monotonic clock keeps
+   * running in rest mode. */
+  if (llabs(off - s->clock_offset_ms) > PS5H_WAKE_JUMP_S * 1000 ||
+      gap > PS5H_SUSPEND_GAP_S * 1000) {
+    char why[64];
+    snprintf(why, sizeof(why), "woke up (gap %lld s)", (long long)(gap / 1000));
+    s->clock_offset_ms = off;
+    rebind(s, now, true, false, why);
     mdns_reannounce(auth_paired());
   }
   if (now - s->last_iface_ms >= PS5H_IFACE_CHECK_S * 1000) {
@@ -201,7 +235,7 @@ static void periodic(server *s, int64_t now) {
         memcmp(cur, s->ifaces, (size_t)n * sizeof(cur[0]))) {
       memcpy(s->ifaces, cur, (size_t)n * sizeof(cur[0]));
       s->n_ifaces = n;
-      log_msg("network addresses changed");
+      rebind(s, now, false, false, "network addresses changed");
       mdns_reannounce(auth_paired());
     }
   }
@@ -230,12 +264,19 @@ static void accept_all(server *s, int64_t now) {
     struct sockaddr_in peer;
     socklen_t plen = sizeof(peer);
     conn *slot = NULL;
-    int fd = accept(s->listen_fd, (struct sockaddr *)&peer, &plen);
+    int fd;
+    if (s->fail_accept_count > 0) {
+      s->fail_accept_count--;
+      fd = -1;
+      errno = s->fail_accept_err;
+    } else {
+      fd = accept(s->listen_fd, (struct sockaddr *)&peer, &plen);
+    }
     if (fd < 0) {
       if (!transient_accept_error(errno)) {
-        log_error("accept failed (errno %d), rebinding", errno);
-        close_listener(s);
-        s->tried_bind = false;
+        char why[48];
+        snprintf(why, sizeof(why), "accept failed (errno %d)", errno);
+        rebind(s, now, false, true, why);
       }
       return;
     }
@@ -406,9 +447,8 @@ int server_step(server *s, int timeout_ms) {
       continue;
     }
     if (!who[i]) {
-      if (pfd[i].revents & (POLLERR | POLLNVAL)) {
-        close_listener(s);
-        s->tried_bind = false;
+      if (pfd[i].revents & (POLLERR | POLLHUP | POLLNVAL)) {
+        rebind(s, now, false, true, "listener failed");
       } else {
         accept_all(s, now);
       }

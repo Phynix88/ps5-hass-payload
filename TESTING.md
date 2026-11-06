@@ -6,7 +6,7 @@ the checklist for a real PS5. It sends files to the console and changes its sett
 ## Setup (port 8182 while ps5-status still uses 8181)
 
 ```sh
-PS5=192.168.50.228
+PS5=<console IP>
 # config with the test port; the payload creates everything else
 printf '{"schema":1,"port":8182}' > /tmp/ps5-hass-config.json
 curl -s --ftp-create-dirs -T /tmp/ps5-hass-config.json ftp://$PS5:2121/data/ps5-hass/config.json

@@ -18,5 +18,7 @@ void server_free(server *s);
 uint16_t server_bound_port(const server *s);
 /* Tests: open connections, successful binds so far. */
 void server_debug(const server *s, int *conns, int *binds);
+/* Tests: the next `count` accept() calls fail with errno `err`. */
+void server_debug_fail_accept(server *s, int err, int count);
 
 #endif

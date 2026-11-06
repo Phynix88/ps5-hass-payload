@@ -9,13 +9,13 @@ static int parse(const char *s, http_req *r) {
 }
 
 static void test_parse_get_complete(void) {
-  const char *s = "GET /api/v1/info HTTP/1.1\r\nHost: 192.168.50.228:8181\r\n"
+  const char *s = "GET /api/v1/info HTTP/1.1\r\nHost: 192.0.2.10:8181\r\n"
                   "Authorization: Bearer abc\r\nIf-None-Match: \"e1\"\r\n\r\n";
   http_req r;
   T_EQ_INT(parse(s, &r), (int)strlen(s));
   T_EQ_INT(r.method, HM_GET);
   T_EQ_STR(r.path, "/api/v1/info");
-  T_EQ_STR(r.host, "192.168.50.228:8181");
+  T_EQ_STR(r.host, "192.0.2.10:8181");
   T_EQ_STR(r.authorization, "Bearer abc");
   T_EQ_STR(r.if_none_match, "\"e1\"");
   T_ASSERT(!r.has_origin && !r.has_marker && !r.has_length);

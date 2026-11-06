@@ -283,6 +283,78 @@ static void test_server_wake_rebinds(void) {
   server_free(s);
 }
 
+
+/* PS5: the monotonic clock keeps running in rest mode (spec section 15), so
+ * both clocks jump together. A long gap between two loop passes means the
+ * process was suspended. */
+static void test_server_suspend_gap_rebinds(void) {
+  static char buf[65536];
+  int conns, binds, fd;
+  server *s = setup(0);
+  fake.mono_ms += 60000;
+  fake.wall_s += 60;
+  pump(s, 2);
+  server_debug(s, &conns, &binds);
+  T_EQ_INT(binds, 2);
+  fd = client(s);
+  send_str(fd, INFO);
+  T_ASSERT(read_all(s, fd, buf, sizeof(buf)) > 0);
+  T_ASSERT(strstr(buf, "200 OK"));
+  close(fd);
+  server_free(s);
+}
+
+static void test_server_iface_change_rebinds(void) {
+  int conns, binds;
+  server *s = setup(0);
+  fake.ipv4[0] = 0x0201a8c0;
+  for (int i = 0; i < 31; i++) { /* no suspend gap: one second per pass */
+    fake.mono_ms += 1000;
+    fake.wall_s += 1;
+    pump(s, 1);
+  }
+  server_debug(s, &conns, &binds);
+  T_EQ_INT(binds, 2);
+  server_free(s);
+}
+
+static void test_server_accept_error_rebinds_with_backoff(void) {
+  char p[800];
+  int conns, binds, a, b;
+  const char *log;
+  int lines = 0;
+  server *s = setup(0);
+  fake.mono_ms += 2000; /* the error comes a while after the last bind */
+  fake.wall_s += 2;
+  server_debug_fail_accept(s, 163, 1000); /* errno seen on the PS5 */
+  a = client(s);
+  pump(s, 3);
+  server_debug(s, &conns, &binds);
+  T_EQ_INT(binds, 2);
+  /* the error persists: no rebind faster than once a second */
+  b = client(s);
+  pump(s, 3);
+  server_debug(s, &conns, &binds);
+  T_EQ_INT(binds, 2);
+  fake.mono_ms += 1001;
+  pump(s, 3);
+  close(b);
+  b = client(s);
+  pump(s, 3);
+  server_debug(s, &conns, &binds);
+  T_EQ_INT(binds, 3);
+  /* and the log is not flooded */
+  snprintf(p, sizeof(p), "%s/data/ps5-hass/log.txt", fake.root);
+  log = t_read(p);
+  for (const char *q = log; q && (q = strstr(q, "accept failed")); q++) {
+    lines++;
+  }
+  T_EQ_INT(lines, 1);
+  close(a);
+  close(b);
+  server_free(s);
+}
+
 static void test_server_bind_busy_retries_and_notifies_once(void) {
   struct sockaddr_in a;
   socklen_t alen = sizeof(a);
@@ -324,6 +396,9 @@ int main(void) {
   T_RUN(test_server_streams_large_icon);
   T_RUN(test_server_wake_rebinds);
   T_RUN(test_server_bind_busy_retries_and_notifies_once);
+  T_RUN(test_server_suspend_gap_rebinds);
+  T_RUN(test_server_iface_change_rebinds);
+  T_RUN(test_server_accept_error_rebinds_with_backoff);
   apps_free(&apps);
   T_MAIN();
 }
