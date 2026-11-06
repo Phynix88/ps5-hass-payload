@@ -295,6 +295,9 @@ int config_load(config *c) {
       v <= PS5H_FAN_STOCK_MAX_C) {
     c->fan_stock_c = (int)v;
   }
+  if (jr_int(&r, jr_get(&r, 0, "fan_written_c"), &v) && v > 0 && v < 256) {
+    c->fan_written_c = (int)v;
+  }
   load_tokens(c, &r, jr_get(&r, 0, "tokens"));
   free(buf);
   return 0;
@@ -350,6 +353,8 @@ int config_save(const config *c) {
   jw_int(&w, c->fan_target_c);
   jw_key(&w, "fan_stock_c");
   jw_int(&w, c->fan_stock_c);
+  jw_key(&w, "fan_written_c");
+  jw_int(&w, c->fan_written_c);
   jw_key(&w, "tokens");
   jw_arr(&w);
   for (int i = 0; i < c->n_tokens; i++) {

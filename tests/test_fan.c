@@ -173,6 +173,80 @@ static void test_fan_device_missing(void) {
   jw_free(&w);
 }
 
+
+/* --- review fixes ---------------------------------------------------- */
+
+static void restart(void) { fan_init(&cfg); }
+
+static void test_fan_never_learns_own_written_value(void) {
+  int rc;
+  fake_reset();
+  snprintf(fake.root, sizeof(fake.root), "%s", t_tmpdir());
+  config_load(&cfg);
+  cfg.fan_control = true;
+  fake.fan_get_rc = -1; /* first read fails: factory value unknown */
+  fan_init(&cfg);
+  T_EQ_INT(fan_set(&cfg, 70, &rc), FAN_OK);
+  T_EQ_INT(fan_set(&cfg, 0, &rc), FAN_OK); /* unknown: 70 stays on the device */
+  fake.fan_get_rc = 0;
+  restart();
+  T_EQ_INT(cfg.fan_stock_c, 0); /* 70 is our own value, never the factory one */
+}
+
+static void test_fan_target_above_learned_stock_is_cleared(void) {
+  int rc;
+  fake_reset();
+  snprintf(fake.root, sizeof(fake.root), "%s", t_tmpdir());
+  config_load(&cfg);
+  cfg.fan_control = true;
+  fake.fan_get_rc = -1;
+  fan_init(&cfg);
+  T_EQ_INT(fan_set(&cfg, 85, &rc), FAN_OK);
+  fake.fan_get_rc = 0;
+  fake.fan_value = 69; /* reboot: the console's own value on this board */
+  restart();
+  T_EQ_INT(cfg.fan_stock_c, 69);
+  T_EQ_INT(cfg.fan_target_c, 0); /* 85 would be hotter than Sony intends */
+  tick(5);
+  T_EQ_INT(fake.fan_value, 69);
+}
+
+static void test_fan_fight_detected(void) {
+  int rc, calls;
+  setup(true, 70); /* another tool had set 70 before our first start */
+  T_EQ_INT(cfg.fan_stock_c, 70);
+  T_EQ_INT(fan_set(&cfg, 60, &rc), FAN_OK);
+  for (int i = 0; i < 6; i++) {
+    fake.fan_value = 70; /* the other tool puts its value back */
+    tick(5);
+  }
+  calls = fake.fan_set_calls;
+  fake.fan_value = 70;
+  tick(5);
+  tick(5);
+  T_EQ_INT(fake.fan_set_calls, calls);
+  T_ASSERT(calls <= 4); /* first set + at most 3 restores */
+  T_ASSERT(log_last_error() && strstr(log_last_error(), "another tool"));
+}
+
+static void test_fan_stock_above_91_unknown(void) {
+  setup(true, 95);
+  T_EQ_INT(cfg.fan_stock_c, 0);
+}
+
+static void test_fan_current_updates_without_target(void) {
+  jw_t w;
+  setup(false, 91);
+  fake.fan_value = 70; /* changed by someone else */
+  tick(5);
+  jw_init(&w);
+  jw_obj(&w);
+  fan_json(&w, &cfg);
+  jw_end_obj(&w);
+  T_ASSERT(strstr(w.buf, "\"current_c\":70"));
+  jw_free(&w);
+}
+
 int main(void) {
   T_RUN(test_fan_disabled);
   T_RUN(test_fan_learns_stock_once);
@@ -185,5 +259,10 @@ int main(void) {
   T_RUN(test_fan_unknown_stock_zero_writes_nothing);
   T_RUN(test_fan_json);
   T_RUN(test_fan_device_missing);
+  T_RUN(test_fan_never_learns_own_written_value);
+  T_RUN(test_fan_target_above_learned_stock_is_cleared);
+  T_RUN(test_fan_fight_detected);
+  T_RUN(test_fan_stock_above_91_unknown);
+  T_RUN(test_fan_current_updates_without_target);
   T_MAIN();
 }

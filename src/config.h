@@ -32,6 +32,7 @@ typedef struct {
   bool fan_control;  /* v0.2: allow setting the fan threshold */
   int fan_target_c;  /* 0 = console's own value */
   int fan_stock_c;   /* learned factory value, 0 = unknown */
+  int fan_written_c; /* last value we wrote ourselves, never learned as factory */
   token_slot tokens[PS5H_MAX_TOKENS];
   int n_tokens;
   bool recovered; /* the file was broken and has been set aside */

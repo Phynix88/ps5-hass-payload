@@ -103,8 +103,12 @@ and no direct speed control.
 - Allowed: 45 to 85 °C, and **never above the console's own value** (`409 fan_above_stock`): the console must never
   run hotter than Sony intends. The factory value is learned once (the first reading that is not our own target)
   and kept in `config.json`.
-- The console resets the threshold at every game start; the payload checks every 5 s and writes the target again.
-  If a different tool sets another value, the payload stops and reports it in `last_error` instead of fighting.
+- The console may reset the threshold at game starts (described by ps5upload; not seen on FW 13.60); the payload
+  checks every 5 s and writes the target again. If a different tool sets another value, or the value keeps
+  changing back (3 times within a minute), the payload stops and reports it in `last_error` instead of fighting.
+- The factory value is never taken from a value the payload wrote itself, and readings above 91 °C (the highest
+  known factory value) are treated as unknown. To learn it again, remove `fan_stock_c` from `config.json` and
+  restart the payload.
 - `{"threshold_c": 0}` writes the factory value back and stops overriding.
 
 ### `/apps`

@@ -40,7 +40,9 @@
 #define PS5H_FAN_MIN_C           45  /* thresholds we may set (as ps5upload) */
 #define PS5H_FAN_MAX_C           85
 #define PS5H_FAN_STOCK_MIN_C     45  /* plausible factory values */
-#define PS5H_FAN_STOCK_MAX_C     100
+#define PS5H_FAN_STOCK_MAX_C     91  /* highest known factory value (FW 13.60) */
+#define PS5H_FAN_FIGHT_RESTORES  3   /* restores ... */
+#define PS5H_FAN_FIGHT_WINDOW_S  60  /* ... within this window = another tool */
 #define PS5H_FAN_CHECK_S         5
 #define PS5H_FAN_MAX_FAILS       5
 #define PS5H_MAX_PROCS           512 /* process names read per scan */
