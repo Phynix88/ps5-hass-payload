@@ -12,7 +12,10 @@
 
 static config *cfg;
 
-static struct {
+/* One code slot with its own failure budget and lock. Pairing and grants
+ * each have one, so a device without a token cannot block granting. */
+typedef struct {
+  const char *what; /* "pairing" / "grant", for the log */
   bool active;      /* a code is held */
   bool exhausted;   /* 5 wrong attempts on this code */
   char code[7];
@@ -23,11 +26,20 @@ static struct {
   int global_fails; /* in a row, across codes */
   int lock_level;
   int64_t lock_until_ms;
-} st;
+} code_state;
+
+static code_state pair_st, grant_st;
+static char grant_client[37]; /* the grant code belongs to this client */
+static unsigned grant_perms;
 
 void auth_init(config *c) {
   cfg = c;
-  memset(&st, 0, sizeof(st));
+  memset(&pair_st, 0, sizeof(pair_st));
+  memset(&grant_st, 0, sizeof(grant_st));
+  pair_st.what = "pairing";
+  grant_st.what = "grant";
+  grant_client[0] = '\0';
+  grant_perms = 0;
 }
 
 bool auth_paired(void) { return cfg && cfg->n_tokens > 0; }
@@ -37,9 +49,9 @@ static int seconds_left(int64_t until_ms, int64_t now_ms) {
   return ms <= 0 ? 0 : (int)((ms + 999) / 1000);
 }
 
-static bool locked(int64_t now, int *retry_after) {
-  if (now < st.lock_until_ms) {
-    *retry_after = seconds_left(st.lock_until_ms, now);
+static bool locked(const code_state *cs, int64_t now, int *retry_after) {
+  if (now < cs->lock_until_ms) {
+    *retry_after = seconds_left(cs->lock_until_ms, now);
     return true;
   }
   return false;
@@ -69,38 +81,48 @@ static int make_code(char out[7]) {
   return -1;
 }
 
-auth_rc auth_pair_start(int *expires_in, int *retry_after) {
+/* Shows `prefix` + a new code on the TV. */
+static auth_rc code_start(code_state *cs, const char *prefix, int *expires_in,
+                          int *retry_after) {
   int64_t now = plat_mono_ms();
-  char code[7], text[64];
+  char code[7], text[256];
   *retry_after = 0;
-  if (locked(now, retry_after)) {
+  if (locked(cs, now, retry_after)) {
     return AUTH_LOCKED;
   }
-  if (st.started && now - st.last_start_ms < PS5H_CODE_RESTART_S * 1000) {
-    *retry_after = seconds_left(st.last_start_ms + PS5H_CODE_RESTART_S * 1000,
+  if (cs->started && now - cs->last_start_ms < PS5H_CODE_RESTART_S * 1000) {
+    *retry_after = seconds_left(cs->last_start_ms + PS5H_CODE_RESTART_S * 1000,
                                 now);
     return AUTH_RATE_LIMITED;
   }
   if (make_code(code)) {
-    log_error("pairing: no randomness source");
+    log_error("%s: no randomness source", cs->what);
     return AUTH_RANDOM_UNAVAILABLE;
   }
-  st.active = false;
-  snprintf(text, sizeof(text), "ps5-hass pairing code: %s", code);
+  cs->active = false;
+  snprintf(text, sizeof(text), "%s%s", prefix, code);
   if (plat_notify(text) < 0) {
-    log_error("pairing: notification failed");
+    log_error("%s: notification failed", cs->what);
     return AUTH_NOTIFY_FAILED;
   }
-  memcpy(st.code, code, sizeof(code));
-  st.active = true;
-  st.exhausted = false;
-  st.fails = 0;
-  st.expires_ms = now + PS5H_CODE_TTL_S * 1000;
-  st.started = true;
-  st.last_start_ms = now;
+  memcpy(cs->code, code, sizeof(code));
+  cs->active = true;
+  cs->exhausted = false;
+  cs->fails = 0;
+  cs->expires_ms = now + PS5H_CODE_TTL_S * 1000;
+  cs->started = true;
+  cs->last_start_ms = now;
   *expires_in = PS5H_CODE_TTL_S;
-  log_msg("pairing: code shown on TV");
   return AUTH_OK;
+}
+
+auth_rc auth_pair_start(int *expires_in, int *retry_after) {
+  auth_rc rc = code_start(&pair_st, "ps5-hass pairing code: ", expires_in,
+                          retry_after);
+  if (rc == AUTH_OK) {
+    log_msg("pairing: code shown on TV");
+  }
+  return rc;
 }
 
 static bool valid_code(const char *s) {
@@ -133,32 +155,67 @@ static bool clean_label(const char *in, char *out, size_t cap) {
   return chars >= 1 && chars <= PS5H_MAX_LABEL && strlen(in) < cap;
 }
 
-static void count_failure(int64_t now) {
-  st.global_fails++;
-  if (st.global_fails >= PS5H_GLOBAL_MAX_FAILS) {
+static void count_failure(code_state *cs, int64_t now) {
+  cs->global_fails++;
+  if (cs->global_fails >= PS5H_GLOBAL_MAX_FAILS) {
     int64_t secs = PS5H_LOCK_BASE_S;
-    for (int i = 0; i < st.lock_level && secs < PS5H_LOCK_MAX_S; i++) {
+    for (int i = 0; i < cs->lock_level && secs < PS5H_LOCK_MAX_S; i++) {
       secs *= 2;
     }
     if (secs > PS5H_LOCK_MAX_S) {
       secs = PS5H_LOCK_MAX_S;
     }
-    st.lock_until_ms = now + secs * 1000;
-    st.lock_level++;
-    st.global_fails = 0;
-    log_error("pairing: %d failures in a row, locked for %lld s",
+    cs->lock_until_ms = now + secs * 1000;
+    cs->lock_level++;
+    cs->global_fails = 0;
+    log_error("%s: %d failures in a row, locked for %lld s", cs->what,
               PS5H_GLOBAL_MAX_FAILS, (long long)secs);
   }
+}
+
+/* Checks a code against the slot. AUTH_OK uses the code up and resets the
+ * failure budget. */
+static auth_rc code_check(code_state *cs, const char *code, int *attempts_left,
+                          int *retry_after) {
+  int64_t now = plat_mono_ms();
+  if (locked(cs, now, retry_after)) {
+    return AUTH_LOCKED;
+  }
+  if (cs->active && now > cs->expires_ms) {
+    cs->active = false;
+  }
+  if (!cs->active) {
+    return AUTH_NO_CODE;
+  }
+  if (cs->exhausted) {
+    return AUTH_CODE_EXHAUSTED;
+  }
+  if (!ct_equal(code, cs->code, 6)) {
+    cs->fails++;
+    *attempts_left = PS5H_CODE_MAX_FAILS - cs->fails;
+    if (cs->fails >= PS5H_CODE_MAX_FAILS) {
+      cs->exhausted = true;
+    }
+    count_failure(cs, now);
+    if (locked(cs, now, retry_after)) {
+      return AUTH_LOCKED;
+    }
+    return AUTH_WRONG_CODE;
+  }
+  cs->active = false;
+  cs->global_fails = 0;
+  cs->lock_level = 0;
+  return AUTH_OK;
 }
 
 auth_rc auth_pair_finish(const char *code, const char *client_id,
                          const char *label, char token_out[65],
                          int *attempts_left, int *retry_after) {
-  int64_t now = plat_mono_ms();
   char clean[sizeof(cfg->tokens[0].label)];
   token_slot backup[PS5H_MAX_TOKENS];
   int n_backup, slot = -1;
   uint8_t raw[32];
+  auth_rc rc;
 
   *attempts_left = 0;
   *retry_after = 0;
@@ -166,35 +223,10 @@ auth_rc auth_pair_finish(const char *code, const char *client_id,
       !clean_label(label, clean, sizeof(clean))) {
     return AUTH_BAD_INPUT;
   }
-  if (locked(now, retry_after)) {
-    return AUTH_LOCKED;
+  if ((rc = code_check(&pair_st, code, attempts_left, retry_after)) != AUTH_OK) {
+    return rc;
   }
-  if (st.active && now > st.expires_ms) {
-    st.active = false;
-  }
-  if (!st.active) {
-    return AUTH_NO_CODE;
-  }
-  if (st.exhausted) {
-    return AUTH_CODE_EXHAUSTED;
-  }
-  if (!ct_equal(code, st.code, 6)) {
-    st.fails++;
-    *attempts_left = PS5H_CODE_MAX_FAILS - st.fails;
-    if (st.fails >= PS5H_CODE_MAX_FAILS) {
-      st.exhausted = true;
-    }
-    count_failure(now);
-    if (locked(now, retry_after)) {
-      return AUTH_LOCKED;
-    }
-    return AUTH_WRONG_CODE;
-  }
-
   /* Correct code: it is used up whatever happens next. */
-  st.active = false;
-  st.global_fails = 0;
-  st.lock_level = 0;
   for (int i = 0; i < cfg->n_tokens; i++) {
     if (!strcmp(cfg->tokens[i].client_id, client_id)) {
       slot = i;
@@ -267,5 +299,71 @@ auth_rc auth_revoke(int slot) {
     return AUTH_SAVE_FAILED;
   }
   log_msg("pairing: token revoked");
+  return AUTH_OK;
+}
+
+/* --- grants (v0.3) ------------------------------------------------------ */
+
+/* Copies at most `max` bytes of `in`, never cutting a UTF-8 character. */
+static void utf8_prefix(const char *in, size_t max, char *out) {
+  size_t n = strlen(in);
+  if (n > max) {
+    n = max;
+    while (n > 0 && ((unsigned char)in[n] & 0xc0) == 0x80) {
+      n--;
+    }
+  }
+  memcpy(out, in, n);
+  out[n] = '\0';
+}
+
+static bool valid_slot(int slot) {
+  return cfg && slot >= 0 && slot < cfg->n_tokens;
+}
+
+auth_rc auth_grant_start(int slot, unsigned perms, const char *perms_text,
+                         int *expires_in, int *retry_after) {
+  char label[PS5H_GRANT_LABEL_MAX_BYTES + 1], prefix[200];
+  auth_rc rc;
+  *retry_after = 0;
+  if (!valid_slot(slot) || !perms || (perms & ~(unsigned)PERM_ALL) ||
+      !perms_text) {
+    return AUTH_BAD_INPUT;
+  }
+  utf8_prefix(cfg->tokens[slot].label, PS5H_GRANT_LABEL_MAX_BYTES, label);
+  snprintf(prefix, sizeof(prefix), "ps5-hass: \"%s\" asks to allow %s. Code: ",
+           label, perms_text);
+  rc = code_start(&grant_st, prefix, expires_in, retry_after);
+  if (rc == AUTH_OK) {
+    memcpy(grant_client, cfg->tokens[slot].client_id, sizeof(grant_client));
+    grant_perms = perms;
+    log_msg("grant: code shown for \"%s\"", label);
+  }
+  return rc;
+}
+
+auth_rc auth_grant_finish(int slot, const char *code, unsigned *perms_out,
+                          int *attempts_left, int *retry_after) {
+  auth_rc rc;
+  *perms_out = 0;
+  *attempts_left = 0;
+  *retry_after = 0;
+  if (!valid_slot(slot) || !valid_code(code)) {
+    return AUTH_BAD_INPUT;
+  }
+  if (locked(&grant_st, plat_mono_ms(), retry_after)) {
+    return AUTH_LOCKED;
+  }
+  /* A code belongs to the client that asked for it; others do not even
+   * learn whether one is open, and do not use up its attempts. */
+  if (!grant_st.active || strcmp(grant_client, cfg->tokens[slot].client_id)) {
+    return AUTH_NO_CODE;
+  }
+  if ((rc = code_check(&grant_st, code, attempts_left, retry_after)) != AUTH_OK) {
+    return rc;
+  }
+  *perms_out = grant_perms;
+  grant_perms = 0;
+  grant_client[0] = '\0';
   return AUTH_OK;
 }
