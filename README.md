@@ -37,6 +37,15 @@ In Home Assistant add the integration. It finds "PS5 …" on its own, or you ent
 `ps5-hass pairing code: 123456` on the TV; type the code into Home Assistant within two minutes. The notification
 also appears with "Do Not Disturb" switched on.
 
+**Missed the code or too slow?** Nothing is lost, just ask for a new one: in the Home Assistant dialog tick
+**"Show a new code"** and press *Submit*. The TV shows a fresh code (at most one new code every 30 seconds; if you
+are too early, Home Assistant tells you how long to wait). An expired code is refused with "The code has expired",
+then do the same. You can also close the dialog and start again from **Settings → Devices & services**.
+
+- Each code works for 2 minutes and for 5 tries.
+- 10 wrong codes in a row lock pairing for 15 minutes (each further lock doubles, up to 24 hours). Wait, or restart
+  the payload on the console (the lock is kept in memory only).
+
 Without Home Assistant (for testing):
 
 ```sh
@@ -105,13 +114,42 @@ Open an issue with the output of `curl http://<ps5>:8181/api/v1/info` (it contai
 
 ## Building
 
-Everything comes from `shell.nix` (PS5 payload SDK v0.45 with checksum, LLVM 21, meson, Python):
+Only needed if you want to build the payload yourself; users download the ELF.
+
+### With Nix (recommended)
+
+[Nix](https://nixos.org/download/) is a package manager for any Linux and for macOS; NixOS is not required.
+`shell.nix` pins the whole toolchain (PS5 payload SDK v0.45 with checksum, LLVM 21, meson, Python), so every build
+uses the same tools as the release builds in CI:
 
 ```sh
 nix-shell --run 'scripts/build-microdns.sh build/microdns && make'   # ps5-hass.elf
 nix-shell --run 'make -f Makefile.host test e2e'                      # unit + end-to-end tests
 nix-shell --run 'make -f Makefile.host fuzz FUZZ_SECONDS=60'          # libFuzzer (Linux)
 ```
+
+### Without Nix
+
+Tested on Ubuntu 24.04 (not part of CI). You need LLVM 21 (clang, ld.lld, llvm-ar, llvm-objcopy, llvm-strip, all in
+the folder `llvm-config --bindir` prints), meson, ninja and the PS5 payload SDK v0.45:
+
+```sh
+sudo apt install git make meson ninja-build pkg-config unzip patch curl wget python3-pytest python3-jsonschema
+wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh && sudo bash /tmp/llvm.sh 21     # LLVM 21 from apt.llvm.org
+
+curl -LO https://github.com/ps5-payload-dev/sdk/releases/download/v0.45/ps5-payload-sdk.zip
+echo "5fac64093d0e3e69f2584ce7935f24f703f622d9681f1495c85b9f00d1291a2c  ps5-payload-sdk.zip" | sha256sum -c
+unzip -q ps5-payload-sdk.zip -d ~/ps5sdk
+
+export PS5_PAYLOAD_SDK=~/ps5sdk/ps5-payload-sdk
+export LLVM_CONFIG=/usr/lib/llvm-21/bin/llvm-config
+scripts/build-microdns.sh build/microdns && make            # ps5-hass.elf
+make -f Makefile.host test e2e CC=clang-21                  # tests; run them as a normal user, not as root
+```
+
+Other systems work the same way as long as `llvm-config --bindir` contains all the LLVM 21 tools (Homebrew, for
+example, ships `lld` as a separate package; put symlinks to everything into one folder and point a small
+`llvm-config` wrapper at it, as `shell.nix` does). Untested.
 
 Design: [docs/specs](docs/specs/). Testing on a console: [TESTING.md](TESTING.md).
 

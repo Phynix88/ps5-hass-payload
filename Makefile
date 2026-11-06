@@ -3,11 +3,12 @@
 # payload to the PS5 is always a deliberate, manual step.
 #
 #   nix-shell --run 'scripts/build-microdns.sh build/microdns && make'
+#   (without Nix: see "Building" in README.md)
 
 ifdef PS5_PAYLOAD_SDK
     include $(PS5_PAYLOAD_SDK)/toolchain/prospero.mk
 else
-    $(error PS5_PAYLOAD_SDK is undefined (use nix-shell))
+    $(error PS5_PAYLOAD_SDK is undefined: use nix-shell, or see "Without Nix" in README.md)
 endif
 
 MICRODNS ?= build/microdns/libmicrodns
