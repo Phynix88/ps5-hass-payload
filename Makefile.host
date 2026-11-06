@@ -52,3 +52,10 @@ fuzz: $(FUZZERS)
 	       > build/fuzz/$$n.log 2>&1; then tail -40 build/fuzz/$$n.log; exit 1; fi; \
 	  tail -2 build/fuzz/$$n.log; \
 	done
+
+# --- host server for end-to-end tests (fake platform, no mDNS) ---
+host: build/ps5-hass-host
+
+build/ps5-hass-host: src/main.c $(SRC_LIB) $(HEADERS)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS_HOST) -DPS5H_HOST -o $@ src/main.c $(SRC_LIB) $(LDLIBS_HOST)
