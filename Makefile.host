@@ -59,3 +59,7 @@ host: build/ps5-hass-host
 build/ps5-hass-host: src/main.c $(SRC_LIB) $(HEADERS)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS_HOST) -DPS5H_HOST -o $@ src/main.c $(SRC_LIB) $(LDLIBS_HOST)
+
+# --- end-to-end tests (pytest + jsonschema, see tests/e2e/requirements.txt) ---
+e2e: build/ps5-hass-host
+	$(PYTHON) -m pytest -q tests/e2e
