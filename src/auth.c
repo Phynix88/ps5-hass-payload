@@ -149,6 +149,12 @@ static bool valid_uuid(const char *s) {
 static bool clean_label(const char *in, char *out, size_t cap) {
   int chars = 0;
   utf8_sanitize(in, strlen(in), out, cap);
+  /* no control characters: the label goes into the log and onto the TV */
+  for (char *q = out; *q; q++) {
+    if ((unsigned char)*q < 0x20 || *q == 0x7f) {
+      *q = ' ';
+    }
+  }
   for (const unsigned char *p = (const unsigned char *)out; *p; p++) {
     chars += (*p & 0xc0) != 0x80;
   }

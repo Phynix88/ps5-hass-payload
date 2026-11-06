@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "fan.h"
+#include "limits.h"
 #include "log.h"
 #include "platform.h"
 
@@ -84,11 +85,23 @@ static void set_bits(config *c, unsigned bits) {
   c->fan_control = bits & PERM_FAN_CONTROL;
 }
 
+/* Label for the log: control characters become spaces (no forged lines). */
+static void log_label(const char *in, char *out, size_t cap) {
+  size_t i = 0;
+  for (; in && in[i] && i + 1 < cap; i++) {
+    unsigned char ch = (unsigned char)in[i];
+    out[i] = ch < 0x20 || ch == 0x7f ? ' ' : (char)ch;
+  }
+  out[i] = '\0';
+}
+
 int perm_apply(config *c, unsigned grant, unsigned revoke, const char *who) {
+  char by[PS5H_MAX_LABEL * 4 + 1];
   unsigned before = perm_allowed(c), after = (before | grant) & ~revoke;
   int target_before = c->fan_target_c;
   bool fan_off = (before & PERM_FAN_CONTROL) && !(after & PERM_FAN_CONTROL);
   char text[64];
+  log_label(who ? who : "?", by, sizeof(by));
   set_bits(c, after);
   if (fan_off) {
     c->fan_target_c = 0;
@@ -101,11 +114,11 @@ int perm_apply(config *c, unsigned grant, unsigned revoke, const char *who) {
   }
   if (after & ~before) {
     perm_text(after & ~before, text, sizeof(text));
-    log_msg("permissions: granted %s (by \"%s\")", text, who ? who : "?");
+    log_msg("permissions: granted %s (by \"%s\")", text, by);
   }
   if (before & ~after) {
     perm_text(before & ~after, text, sizeof(text));
-    log_msg("permissions: revoked %s (by \"%s\")", text, who ? who : "?");
+    log_msg("permissions: revoked %s (by \"%s\")", text, by);
   }
   if (fan_off && target_before) {
     fan_release(c); /* only if we had set a threshold */

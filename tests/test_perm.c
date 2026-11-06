@@ -196,6 +196,16 @@ static void test_apply_logs_label(void) {
   T_ASSERT(strstr(t_read(path), "permissions: revoked power off (by \"Home Assistant\")"));
 }
 
+static void test_apply_log_label_without_control_characters(void) {
+  char path[800];
+  const char *log;
+  setup();
+  T_EQ_INT(perm_apply(&cfg, PERM_POWER_OFF, 0, "x\n[fake] line"), 0);
+  snprintf(path, sizeof(path), "%s/log.txt", dir);
+  log = t_read(path);
+  T_ASSERT(strstr(log, "(by \"x [fake] line\")"));
+}
+
 int main(void) {
   T_RUN(test_parse_valid_names);
   T_RUN(test_parse_rejects_empty_unknown_duplicate_nonarray);
@@ -209,6 +219,7 @@ int main(void) {
   T_RUN(test_text_order);
   T_RUN(test_json_shape);
   T_RUN(test_apply_logs_label);
+  T_RUN(test_apply_log_label_without_control_characters);
   T_RUN(test_revoke_fan_without_target_does_not_write);
   T_RUN(test_revoke_fan_after_watcher_gave_up_does_not_write);
   T_MAIN();

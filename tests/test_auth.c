@@ -554,6 +554,13 @@ static void test_both_codes_open_never_cross(void) {
   T_EQ_INT(finish(pair_code, CLIENT2, tok, &left, &retry), AUTH_OK);
 }
 
+static void test_pair_label_control_characters_become_spaces(void) {
+  setup();
+  pair_as(CLIENT, "Evil\n[2026] pairing: paired \"x\"\r");
+  T_ASSERT(!strpbrk(cfg.tokens[0].label, "\n\r"));
+  T_EQ_STR(cfg.tokens[0].label, "Evil [2026] pairing: paired \"x\" ");
+}
+
 int main(void) {
   T_RUN(test_pair_start_shows_code_on_tv);
   T_RUN(test_pair_start_notify_failed_holds_no_code);
@@ -586,5 +593,6 @@ int main(void) {
   T_RUN(test_grant_text_label_3byte_emoji_quotes);
   T_RUN(test_grant_text_strips_control_characters);
   T_RUN(test_both_codes_open_never_cross);
+  T_RUN(test_pair_label_control_characters_become_spaces);
   T_MAIN();
 }
