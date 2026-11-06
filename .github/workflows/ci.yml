@@ -1,5 +1,6 @@
-# One job to keep the account-wide minutes low while the repo is private:
-# host tests on every push; PS5 build and release only for tags v*.
+# Host tests on every push (read-only token, shared Nix cache).
+# PS5 build and release only for tags v*, in a separate job without the
+# shared cache. Third-party actions are pinned to commit SHAs.
 name: ci
 on:
   push:
@@ -11,29 +12,37 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write # release + payloads.json on tags only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0 # git describe for the version
-      - uses: DeterminateSystems/nix-installer-action@main
-      - uses: DeterminateSystems/magic-nix-cache-action@main
-
+          persist-credentials: false
+      - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
+      - uses: DeterminateSystems/magic-nix-cache-action@84c0677f58dcedf3b91f8223ce36a9ea5b3c84b7 # v15
       - name: Unit and end-to-end tests
         run: nix-shell --run 'make -f Makefile.host test e2e && python -m pytest -q tests/test_make_payloads_json.py'
 
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # release + payloads.json
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # git describe for the version
+          persist-credentials: false
+      - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
+
       - name: Build payload
-        if: startsWith(github.ref, 'refs/tags/v')
         run: |
           nix-shell --run 'scripts/build-microdns.sh build/microdns && make'
           sha256sum ps5-hass.elf > SHA256SUMS
           cat SHA256SUMS
 
       - name: Release
-        if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -42,7 +51,8 @@ jobs:
             --notes-file <(awk -v t="## $GITHUB_REF_NAME" '$0==t{f=1;next} /^## /{f=0} f' CHANGELOG.md)
 
       - name: Update payloads.json on main
-        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           cp ps5-hass.elf /tmp/ps5-hass.elf
           git fetch origin main && git checkout main
@@ -52,4 +62,4 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add payloads.json
           git commit -m "release: payloads.json for $GITHUB_REF_NAME"
-          git push origin main
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" main
