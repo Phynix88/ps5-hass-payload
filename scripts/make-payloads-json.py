@@ -37,9 +37,10 @@ def main():
                 "name": "PS5 Home Assistant bridge",
                 "filename": "ps5-hass.elf",
                 "url": f"{base}/releases/download/{a.version}/ps5-hass.elf",
-                "description": "Console state, installed apps with covers, launch and "
-                               "close apps, rest mode - for Home Assistant (HACS "
-                               "integration ps5-hass). Pair with a code shown on the TV.",
+                "description": "Connects the console to Home Assistant (HACS integration "
+                               "ps5-hass): state, apps with covers, launch and close apps, "
+                               "messages on the TV, rest mode, power off, fan threshold. "
+                               "Pair with a code shown on the TV.",
                 "version": a.version,
                 "last_update": date,
                 "category": "Networking",

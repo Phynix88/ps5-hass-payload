@@ -22,11 +22,14 @@ uses the HTTP API described in [API.md](API.md).
 
 ## Installation
 
-1. In the Payload Manager open **Manage Sources** and add
-   `https://raw.githubusercontent.com/Phynix88/ps5-hass-payload/main/payloads.json`
-   (or open `http://<ps5>:8084/sources_add?url=<that URL>`).
-2. Install **PS5 Home Assistant bridge** and add it to the autoload.
-3. Load it. It listens on port 8181.
+With the [Payload Manager](https://github.com/itsPLK/ps5-payload-manager) (tested with 0.6.3):
+
+1. **Settings** → switch on **Multiple Payload Sources** (without it, the Payload Manager only shows its official
+   repository).
+2. **Settings** → **Manage Sources** → **Add Source**, paste
+   `https://raw.githubusercontent.com/Phynix88/ps5-hass-payload/main/payloads.json` and press **Add**.
+3. In the **Manage** tab open the catalog **ps5-hass** and install **PS5 Home Assistant bridge**.
+4. Add it to the autoload and load it. It listens on port 8181. Updates show up in the same catalog.
 
 Or download `ps5-hass.elf` from the [releases](https://github.com/Phynix88/ps5-hass-payload/releases) (check it
 against `SHA256SUMS`) and load it with any ELF loader. A new start replaces a running copy.
