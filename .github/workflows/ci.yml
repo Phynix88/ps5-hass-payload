@@ -54,12 +54,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
+          remote="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           cp ps5-hass.elf /tmp/ps5-hass.elf
-          git fetch origin main && git checkout main
+          git fetch "$remote" main
+          git checkout -B main FETCH_HEAD
           python3 scripts/make-payloads-json.py --version "$GITHUB_REF_NAME" \
             --elf /tmp/ps5-hass.elf --repo "$GITHUB_REPOSITORY" > payloads.json
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add payloads.json
           git commit -m "release: payloads.json for $GITHUB_REF_NAME"
-          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" main
+          git push "$remote" HEAD:main
