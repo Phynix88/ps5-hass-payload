@@ -163,3 +163,12 @@ void fan_json(jw_t *w, const config *c) {
   jw_opt_int(w, c->fan_stock_c > 0, c->fan_stock_c);
   jw_end_obj(w);
 }
+
+void fan_release(config *c) {
+  reset_watch();
+  if (c->fan_stock_c && write_value(c, c->fan_stock_c) >= 0) {
+    log_msg("fan: threshold %d C (factory value)", c->fan_stock_c);
+    return;
+  }
+  log_error("fan: threshold stays until the console resets it");
+}

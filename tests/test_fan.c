@@ -5,6 +5,7 @@
 #include "config.h"
 #include "fan.h"
 #include "json.h"
+#include "limits.h"
 #include "log.h"
 #include "platform_fake.h"
 
@@ -247,6 +248,32 @@ static void test_fan_current_updates_without_target(void) {
   jw_free(&w);
 }
 
+static void test_release_stock_unknown_logs_and_stops_watcher(void) {
+  int rc, calls;
+  setup(true, 30); /* implausible reading: factory value stays unknown */
+  T_EQ_INT(cfg.fan_stock_c, 0);
+  T_EQ_INT(fan_set(&cfg, 70, &rc), FAN_OK);
+  calls = fake.fan_set_calls;
+  cfg.fan_control = false;
+  cfg.fan_target_c = 0;
+  fan_release(&cfg);
+  T_EQ_INT(fake.fan_set_calls, calls);
+  T_ASSERT(strstr(log_last_error(), "stays until the console resets it"));
+  fake.fan_value = 91; /* console resets later; nothing may write again */
+  tick(PS5H_FAN_CHECK_S + 1);
+  T_EQ_INT(fake.fan_set_calls, calls);
+}
+
+static void test_release_writes_known_stock(void) {
+  int rc;
+  setup(true, 91);
+  T_EQ_INT(fan_set(&cfg, 70, &rc), FAN_OK);
+  cfg.fan_control = false;
+  cfg.fan_target_c = 0;
+  fan_release(&cfg);
+  T_EQ_INT(fake.fan_value, 91);
+}
+
 int main(void) {
   T_RUN(test_fan_disabled);
   T_RUN(test_fan_learns_stock_once);
@@ -264,5 +291,7 @@ int main(void) {
   T_RUN(test_fan_fight_detected);
   T_RUN(test_fan_stock_above_91_unknown);
   T_RUN(test_fan_current_updates_without_target);
+  T_RUN(test_release_stock_unknown_logs_and_stops_watcher);
+  T_RUN(test_release_writes_known_stock);
   T_MAIN();
 }
