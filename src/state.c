@@ -8,6 +8,7 @@
 #include "fan.h"
 #include "procs.h"
 #include "log.h"
+#include "perm.h"
 #include "platform.h"
 
 #ifndef PS5H_VERSION
@@ -134,6 +135,7 @@ void info_json(jw_t *w, const config *c, const char *device_id,
   jw_key(w, "fan_control");
   jw_bool(w, caps.fan_control && c->fan_control);
   jw_end_obj(w);
+  perm_json(w, c);
   jw_key(w, "last_error");
   if (err) {
     jw_cstr(w, err);

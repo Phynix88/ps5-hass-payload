@@ -115,6 +115,9 @@
             "string",
             "null"
           ]
+        },
+        "permissions": {
+          "$ref": "#/$defs/permissions"
         }
       },
       "required": [
@@ -130,7 +133,8 @@
         "power_actions",
         "config",
         "capabilities",
-        "last_error"
+        "last_error",
+        "permissions"
       ],
       "additionalProperties": false
     },
@@ -402,7 +406,9 @@
             "internal",
             "power_off_disabled",
             "fan_control_disabled",
-            "fan_above_stock"
+            "fan_above_stock",
+            "not_available",
+            "already_allowed"
           ]
         },
         "message": {
@@ -464,6 +470,91 @@
       "required": [
         "result",
         "fan"
+      ],
+      "additionalProperties": false
+    },
+    "permissions": {
+      "type": "object",
+      "properties": {
+        "power_actions": {
+          "$ref": "#/$defs/permission"
+        },
+        "power_off": {
+          "$ref": "#/$defs/permission"
+        },
+        "fan_control": {
+          "$ref": "#/$defs/permission"
+        }
+      },
+      "required": [
+        "power_actions",
+        "power_off",
+        "fan_control"
+      ],
+      "additionalProperties": false
+    },
+    "permission": {
+      "type": "object",
+      "properties": {
+        "allowed": {
+          "type": "boolean"
+        },
+        "available": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "allowed",
+        "available"
+      ],
+      "additionalProperties": false
+    },
+    "grant_start": {
+      "type": "object",
+      "properties": {
+        "result": {
+          "const": "ok"
+        },
+        "expires_in": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "result",
+        "expires_in"
+      ],
+      "additionalProperties": false
+    },
+    "grant_finish": {
+      "type": "object",
+      "properties": {
+        "result": {
+          "const": "ok"
+        },
+        "permissions": {
+          "$ref": "#/$defs/permissions"
+        }
+      },
+      "required": [
+        "result",
+        "permissions"
+      ],
+      "additionalProperties": false
+    },
+    "grant_revoke": {
+      "type": "object",
+      "properties": {
+        "result": {
+          "const": "ok"
+        },
+        "permissions": {
+          "$ref": "#/$defs/permissions"
+        }
+      },
+      "required": [
+        "result",
+        "permissions"
       ],
       "additionalProperties": false
     }

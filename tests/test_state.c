@@ -159,6 +159,19 @@ static void test_info_power_off_needs_permission(void) {
   T_ASSERT(strstr(s, "\"power_off\":false"));
 }
 
+static void test_info_has_permissions(void) {
+  jr_t r;
+  const char *s;
+  setup();
+  cfg.fan_control = true;
+  fake.caps.power_off = false;
+  T_ASSERT((s = render_info(&r)));
+  T_ASSERT(strstr(s, "\"permissions\":{\"power_actions\":{\"allowed\":false,"
+                     "\"available\":true},\"power_off\":{\"allowed\":false,"
+                     "\"available\":false},\"fan_control\":{\"allowed\":true,"
+                     "\"available\":true}}"));
+}
+
 int main(void) {
   T_RUN(test_state_idle);
   T_RUN(test_state_running_named);
@@ -168,5 +181,6 @@ int main(void) {
   T_RUN(test_info_power_off_needs_permission);
   T_RUN(test_info_recovered_and_last_error);
   apps_free(&apps);
+  T_RUN(test_info_has_permissions);
   T_MAIN();
 }

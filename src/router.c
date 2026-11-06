@@ -16,6 +16,7 @@
 #include "limits.h"
 #include "log.h"
 #include "mdns.h"
+#include "perm.h"
 #include "state.h"
 
 #define PREFIX "/api/v1"
@@ -204,7 +205,10 @@ typedef enum {
   R_STANDBY,
   R_NOTIFY,
   R_POWER_OFF,
-  R_FAN
+  R_FAN,
+  R_GRANT_START,
+  R_GRANT_FINISH,
+  R_GRANT_REVOKE
 } route_id;
 
 /* Fills id (the <ID> path segment) for icon/launch. */
@@ -226,6 +230,9 @@ static route_id match(const char *path, http_method *want, char *id,
       {PREFIX "/notify", HM_POST, R_NOTIFY},
       {PREFIX "/power/off", HM_POST, R_POWER_OFF},
       {PREFIX "/fan", HM_POST, R_FAN},
+      {PREFIX "/grant/start", HM_POST, R_GRANT_START},
+      {PREFIX "/grant/finish", HM_POST, R_GRANT_FINISH},
+      {PREFIX "/grant/revoke", HM_POST, R_GRANT_REVOKE},
   };
   const char *apps = PREFIX "/apps/";
   size_t alen = strlen(apps);
@@ -595,6 +602,109 @@ static void h_notify(const jr_t *r, route_resp *out) {
   }
 }
 
+/* --- grants (v0.3) ----------------------------------------------------- */
+
+static void permissions_answer(route_ctx *ctx, route_resp *out) {
+  perm_json(ok(out), ctx->cfg);
+  done(out);
+}
+
+static void h_grant_start(route_ctx *ctx, const jr_t *r, int slot,
+                          route_resp *out) {
+  unsigned want, missing;
+  int expires_in = 0, retry = 0;
+  char text[64];
+  jw_t *w;
+  if (perm_parse(r, jr_get(r, 0, "permissions"), &want)) {
+    fail(out, 400, "bad_request",
+         "permissions: list of power_actions, power_off, fan_control");
+    return;
+  }
+  if (want & ~perm_available()) {
+    fail(out, 409, "not_available", "the console cannot do this");
+    return;
+  }
+  if (!(missing = want & ~perm_allowed(ctx->cfg))) {
+    fail(out, 409, "already_allowed", "already allowed");
+    return;
+  }
+  perm_text(missing, text, sizeof(text));
+  switch (auth_grant_start(slot, missing, text, &expires_in, &retry)) {
+  case AUTH_OK:
+    w = ok(out);
+    jw_key(w, "expires_in");
+    jw_int(w, expires_in);
+    done(out);
+    return;
+  case AUTH_RATE_LIMITED:
+    fail_retry(out, 429, "rate_limited", "wait before asking for a new code", retry);
+    return;
+  case AUTH_LOCKED:
+    fail_retry(out, 429, "locked", "too many wrong codes", retry);
+    return;
+  case AUTH_NOTIFY_FAILED:
+    fail(out, 500, "notify_failed", "could not show the code on the TV");
+    return;
+  case AUTH_RANDOM_UNAVAILABLE:
+    fail(out, 500, "random_unavailable", "no randomness source on the console");
+    return;
+  default:
+    fail(out, 500, "internal", "could not start the grant");
+  }
+}
+
+static void h_grant_finish(route_ctx *ctx, const jr_t *r, int slot,
+                           route_resp *out) {
+  char code[16];
+  unsigned perms = 0;
+  int left = 0, retry = 0;
+  jw_t *w;
+  if (!jr_string(r, jr_get(r, 0, "code"), code, sizeof(code))) {
+    fail(out, 400, "bad_request", "code is required");
+    return;
+  }
+  switch (auth_grant_finish(slot, code, &perms, &left, &retry)) {
+  case AUTH_OK:
+    if (perm_apply(ctx->cfg, perms, 0)) {
+      fail(out, 500, "internal", "could not save config.json");
+      return;
+    }
+    permissions_answer(ctx, out);
+    return;
+  case AUTH_WRONG_CODE:
+    w = err(out, 401, "wrong_code", "the code does not match");
+    jw_key(w, "attempts_left");
+    jw_int(w, left);
+    done(out);
+    return;
+  case AUTH_NO_CODE:
+    fail(out, 409, "no_code", "no active code, start the grant first");
+    return;
+  case AUTH_CODE_EXHAUSTED:
+    fail(out, 409, "code_exhausted", "too many wrong attempts, start again");
+    return;
+  case AUTH_LOCKED:
+    fail_retry(out, 429, "locked", "too many wrong codes", retry);
+    return;
+  default:
+    fail(out, 400, "bad_request", "code: 6 digits");
+  }
+}
+
+static void h_grant_revoke(route_ctx *ctx, const jr_t *r, route_resp *out) {
+  unsigned perms;
+  if (perm_parse(r, jr_get(r, 0, "permissions"), &perms)) {
+    fail(out, 400, "bad_request",
+         "permissions: list of power_actions, power_off, fan_control");
+    return;
+  }
+  if (perm_apply(ctx->cfg, 0, perms)) {
+    fail(out, 500, "internal", "could not save config.json");
+    return;
+  }
+  permissions_answer(ctx, out);
+}
+
 void route(route_ctx *ctx, const http_req *req, uint32_t peer,
            route_resp *out) {
   static jsmntok_t tok[256];
@@ -672,6 +782,9 @@ void route(route_ctx *ctx, const http_req *req, uint32_t peer,
   case R_NOTIFY: h_notify(&body, out); break;
   case R_POWER_OFF: h_power_off(ctx, out); break;
   case R_FAN: h_fan(ctx, &body, out); break;
+  case R_GRANT_START: h_grant_start(ctx, &body, slot, out); break;
+  case R_GRANT_FINISH: h_grant_finish(ctx, &body, slot, out); break;
+  case R_GRANT_REVOKE: h_grant_revoke(ctx, &body, out); break;
   default: fail(out, 404, "not_found", "unknown path");
   }
 }

@@ -56,7 +56,7 @@ There are no CORS headers.
 
 | Method and path | Token | Answer |
 |---|---|---|
-| `GET /info` | no | `name`, `version`, `commit`, `api` (1), `device_id`, `model`, `firmware`, `paired`, `power_actions`, `config` (`ok`/`recovered`), `capabilities{temps,fan,notify,random,launch,standby,mdns,power_off,fan_control}`, `last_error` |
+| `GET /info` | no | `name`, `version`, `commit`, `api` (1), `device_id`, `model`, `firmware`, `paired`, `power_actions`, `config` (`ok`/`recovered`), `capabilities{temps,fan,notify,random,launch,standby,mdns,power_off,fan_control}`, `permissions{power_actions,power_off,fan_control}` (each `{allowed,available}`, since v0.3), `last_error` |
 | `POST /pair/start` | no | `{"expires_in":120}` |
 | `POST /pair/finish` | no | `{"token":"<64 hex>"}` |
 | `POST /pair/revoke` | yes | `{}` |
@@ -69,6 +69,9 @@ There are no CORS headers.
 | `POST /power/off` | yes | power off (not rest mode); only when `power_off` is `true` in `config.json` (since v0.2); shares the 10 s limit with standby |
 | `POST /notify` | yes | body `{"message":"Dinner is ready"}`: shown as a notification on the TV (UTF-8, cut to 200 bytes, control characters removed); at most 5 per 30 s (since v0.2) |
 | `POST /fan` | yes | body `{"threshold_c":70}` (45..85) or `{"threshold_c":0}` (back to the console's own value); only when `fan_control` is `true` in `config.json`; answer `{"fan":{…}}` (since v0.2) |
+| `POST /grant/start` | yes | body `{"permissions":["power_off","fan_control"]}` → the TV shows a code, answer `{"expires_in":120}` (since v0.3, see [Permissions](#permissions-since-v03)) |
+| `POST /grant/finish` | yes | body `{"code":"123456"}` → the permissions are granted and saved, answer `{"permissions":{…}}` |
+| `POST /grant/revoke` | yes | body `{"permissions":["power_off"]}` → taken away at once, no code, answer `{"permissions":{…}}` |
 
 Success answers carry `"result":"ok"`. `<ID>` must match `^[A-Z]{4}[0-9]{5}$`.
 
@@ -111,6 +114,33 @@ and no direct speed control.
   restart the payload.
 - `{"threshold_c": 0}` writes the factory value back and stops overriding.
 
+### Permissions (since v0.3)
+
+Rest mode, power off and the fan threshold are off until they are allowed. Either set `power_actions`, `power_off`
+or `fan_control` to `true` in `config.json` and restart the payload (as before), or grant them from a paired client
+with a code shown on the TV:
+
+1. `POST /grant/start` with the names. The TV shows `ps5-hass: "<label>" asks to allow power off, fan threshold.
+   Code: 123456` (`<label>` is the label of the asking client's pairing, at most 40 bytes).
+2. `POST /grant/finish` with the code. The permissions apply at once and are saved in `config.json`.
+
+Rules:
+- Names: `power_actions` (rest mode), `power_off`, `fan_control`. An empty list, an unknown or a repeated name is
+  `400 bad_request`.
+- A name the console cannot do (`permissions.<name>.available` is `false`) is `409 not_available`. Names that are
+  already allowed are left out of the code; if nothing is left, `409 already_allowed`.
+- Grant codes have their own slot and their own failure budget, separate from pairing: a pairing code is never
+  accepted as a grant code and the other way round. A grant code belongs to the client that asked for it; another
+  client gets `409 no_code`.
+- Otherwise like pairing: valid 120 s, a new code at most every 30 s (`429 rate_limited`), 5 wrong attempts use a
+  code up (`409 code_exhausted`), 10 wrong grant codes in a row lock granting for 15 minutes, doubling up to 24 hours
+  (`429 locked`). The lock is kept in memory only.
+- `POST /grant/revoke` needs no code. Names that are not allowed or not available are no error.
+- Taking `fan_control` away first saves `config.json`, then writes the console's factory threshold back. If that
+  write fails or the factory value is unknown, the permission is gone anyway and `last_error` says the threshold
+  stays until the console resets it.
+- If `config.json` cannot be saved, nothing changes and the answer is `500 internal`.
+
 ### `/apps`
 
 - The list joins `/user/appmeta/<ID>/` and `/user/app/<ID>/sce_sys/` (homebrew often has only the latter). System
@@ -146,7 +176,7 @@ and no direct speed control.
 | 403 | `origin_forbidden`, `browser_guard`, `host_forbidden`, `address_forbidden`, `power_actions_disabled`, `power_off_disabled`, `fan_control_disabled` | |
 | 404 | `not_found`, `not_installed` | |
 | 405 | `method_not_allowed` | |
-| 409 | `no_code`, `code_exhausted`, `token_limit`, `other_app_running`, `no_user`, `title_mismatch`, `no_app`, `fan_above_stock` | |
+| 409 | `no_code`, `code_exhausted`, `token_limit`, `other_app_running`, `no_user`, `title_mismatch`, `no_app`, `fan_above_stock`, `not_available`, `already_allowed` | |
 | 411 | `length_required` (chunked body, or `POST` without `Content-Length`) | |
 | 413 | `body_too_large` (more than 4096 bytes) | |
 | 429 | `locked`, `rate_limited` | `retry_after` (seconds) |

@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "t.h"
 
+#include <sys/stat.h>
 #include <sys/time.h>
 
 #include "apps.h"
@@ -10,6 +11,7 @@
 #include "fan.h"
 #include "http.h"
 #include "json.h"
+#include "limits.h"
 #include "platform_fake.h"
 #include "router.h"
 
@@ -470,6 +472,127 @@ static void test_fan_codes(void) {
   T_ASSERT(strstr(body, "\"fan\":{\"target_c\":null,\"current_c\":80,\"stock_c\":80}"));
 }
 
+/* --- grants (v0.3) ------------------------------------------------------ */
+
+static const char *notify_code(void) {
+  return fake.last_notify + strlen(fake.last_notify) - 6;
+}
+
+static int grant_finish_shown(void) {
+  char fin[64];
+  snprintf(fin, sizeof(fin), "{\"code\":\"%s\"}", notify_code());
+  return call("POST", "/api/v1/grant/finish", fin);
+}
+
+static void test_grant_flow_start_finish(void) {
+  setup();
+  pair();
+  fake.mono_ms += 31000;
+  T_EQ_INT(call("POST", "/api/v1/grant/start",
+                "{\"permissions\":[\"power_off\",\"fan_control\"]}"),
+           200);
+  T_ASSERT(strstr(body, "\"expires_in\":120"));
+  T_ASSERT(strstr(fake.last_notify, "ps5-hass: \"Home Assistant\" asks to allow "
+                                    "power off, fan threshold. Code: "));
+  T_EQ_INT(call("POST", "/api/v1/grant/finish", "{\"code\":\"12345\"}"), 400);
+  T_EQ_INT(grant_finish_shown(), 200);
+  T_ASSERT(strstr(body, "\"permissions\":{\"power_actions\":{\"allowed\":false"));
+  T_ASSERT(strstr(body, "\"power_off\":{\"allowed\":true,\"available\":true}"));
+  T_ASSERT(cfg.power_off && cfg.fan_control && !cfg.power_actions);
+  T_EQ_INT(call("POST", "/api/v1/power/off", "{}"), 200);
+  /* the code is used up */
+  T_EQ_INT(grant_finish_shown(), 409);
+  T_ASSERT(strstr(body, "\"error\":\"no_code\""));
+}
+
+static void test_grant_wrong_code_401(void) {
+  char fin[64], wrong[7];
+  setup();
+  pair();
+  fake.mono_ms += 31000;
+  T_EQ_INT(call("POST", "/api/v1/grant/start", "{\"permissions\":[\"power_off\"]}"),
+           200);
+  snprintf(wrong, sizeof(wrong), "%s", notify_code());
+  wrong[0] = wrong[0] == '9' ? '0' : (char)(wrong[0] + 1);
+  snprintf(fin, sizeof(fin), "{\"code\":\"%s\"}", wrong);
+  T_EQ_INT(call("POST", "/api/v1/grant/finish", fin), 401);
+  T_ASSERT(strstr(body, "\"error\":\"wrong_code\""));
+  T_ASSERT(strstr(body, "\"attempts_left\":4"));
+  T_ASSERT(!cfg.power_off);
+}
+
+static void test_grant_start_not_available_409(void) {
+  setup();
+  pair();
+  fake.caps.power_off = false;
+  fake.mono_ms += 31000;
+  T_EQ_INT(call("POST", "/api/v1/grant/start", "{\"permissions\":[\"power_off\"]}"),
+           409);
+  T_ASSERT(strstr(body, "\"error\":\"not_available\""));
+}
+
+static void test_grant_start_skips_already_allowed(void) {
+  setup();
+  pair();
+  cfg.power_actions = true;
+  fake.mono_ms += 31000;
+  T_EQ_INT(call("POST", "/api/v1/grant/start", "{\"permissions\":[\"power_actions\"]}"),
+           409);
+  T_ASSERT(strstr(body, "\"error\":\"already_allowed\""));
+  T_EQ_INT(call("POST", "/api/v1/grant/start",
+                "{\"permissions\":[\"power_actions\",\"power_off\"]}"),
+           200);
+  T_ASSERT(strstr(fake.last_notify, "asks to allow power off. Code: "));
+  T_ASSERT(!strstr(fake.last_notify, "rest mode"));
+}
+
+static void test_grant_bad_names_400(void) {
+  setup();
+  pair();
+  T_EQ_INT(call("POST", "/api/v1/grant/start", "{\"permissions\":[]}"), 400);
+  T_EQ_INT(call("POST", "/api/v1/grant/start", "{\"permissions\":[\"x\"]}"), 400);
+  T_EQ_INT(call("POST", "/api/v1/grant/revoke",
+                "{\"permissions\":[\"power_off\",\"power_off\"]}"),
+           400);
+  T_EQ_INT(call("POST", "/api/v1/grant/finish", "{}"), 400);
+}
+
+static void test_grant_needs_token_401(void) {
+  setup();
+  T_EQ_INT(call("POST", "/api/v1/grant/start", "{\"permissions\":[\"power_off\"]}"),
+           401);
+  T_EQ_INT(call("POST", "/api/v1/grant/finish", "{\"code\":\"123456\"}"), 401);
+  T_EQ_INT(call("POST", "/api/v1/grant/revoke", "{\"permissions\":[\"power_off\"]}"),
+           401);
+}
+
+static void test_grant_revoke_without_code(void) {
+  setup();
+  pair();
+  cfg.power_off = true;
+  T_EQ_INT(call("POST", "/api/v1/grant/revoke",
+                "{\"permissions\":[\"power_off\",\"fan_control\"]}"),
+           200);
+  T_ASSERT(!cfg.power_off);
+  T_ASSERT(strstr(body, "\"power_off\":{\"allowed\":false"));
+  T_EQ_INT(call("POST", "/api/v1/power/off", "{}"), 403);
+}
+
+static void test_grant_finish_save_fails_500(void) {
+  char dir[800];
+  setup();
+  pair();
+  fake.mono_ms += 31000;
+  T_EQ_INT(call("POST", "/api/v1/grant/start", "{\"permissions\":[\"power_off\"]}"),
+           200);
+  snprintf(dir, sizeof(dir), "%s%s", fake.root, PS5H_DATA_DIR);
+  T_EQ_INT(chmod(dir, 0500), 0);
+  T_EQ_INT(grant_finish_shown(), 500);
+  T_EQ_INT(chmod(dir, 0700), 0);
+  T_ASSERT(strstr(body, "\"error\":\"internal\""));
+  T_ASSERT(!cfg.power_off);
+}
+
 int main(void) {
   T_RUN(test_origin_blocked_before_everything);
   T_RUN(test_post_requires_json_and_marker);
@@ -498,5 +621,13 @@ int main(void) {
   T_RUN(test_power_off_codes);
   T_RUN(test_fan_codes);
   apps_free(&apps);
+  T_RUN(test_grant_flow_start_finish);
+  T_RUN(test_grant_wrong_code_401);
+  T_RUN(test_grant_start_not_available_409);
+  T_RUN(test_grant_start_skips_already_allowed);
+  T_RUN(test_grant_bad_names_400);
+  T_RUN(test_grant_needs_token_401);
+  T_RUN(test_grant_revoke_without_code);
+  T_RUN(test_grant_finish_save_fails_500);
   T_MAIN();
 }

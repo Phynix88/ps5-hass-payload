@@ -343,3 +343,54 @@ def test_power_off_and_fan_enabled(tmp_path):
         validate("ok", doc)
     finally:
         c.stop()
+
+
+def grant_start(console, names):
+    return console.post("/api/v1/grant/start", {"permissions": names})
+
+
+def test_grant_start_finish_revoke(paired):
+    status, info, _ = paired.get("/api/v1/info")
+    validate("info", info)
+    assert info["permissions"]["power_off"] == {"allowed": False, "available": True}
+    status, doc, _ = grant_start(paired, ["power_off"])
+    assert status == 200, doc
+    validate("grant_start", doc)
+    status, doc, _ = paired.post("/api/v1/grant/finish", {"code": paired.shown_code()})
+    assert status == 200, doc
+    validate("grant_finish", doc)
+    assert doc["permissions"]["power_off"]["allowed"] is True
+    status, info, _ = paired.get("/api/v1/info")
+    assert info["permissions"]["power_off"]["allowed"] is True
+    assert info["capabilities"]["power_off"] is True
+    status, doc, _ = paired.post("/api/v1/grant/revoke", {"permissions": ["power_off"]})
+    assert status == 200, doc
+    validate("grant_revoke", doc)
+    assert doc["permissions"]["power_off"]["allowed"] is False
+    status, doc, _ = paired.post("/api/v1/power/off")
+    assert status == 403 and doc["error"] == "power_off_disabled"
+
+
+def test_grant_errors(tmp_path):
+    c = Console(tmp_path, config_extra={"power_actions": True})
+    try:
+        c.pair()
+        status, doc, _ = grant_start(c, [])
+        assert status == 400
+        validate("error", doc)
+        status, doc, _ = grant_start(c, ["power_actions"])
+        assert status == 409 and doc["error"] == "already_allowed"
+        validate("error", doc)
+        status, doc, _ = grant_start(c, ["fan_control"])
+        assert status == 200
+        code = c.shown_code()
+        wrong = ("1" if code[0] != "1" else "2") + code[1:]
+        status, doc, _ = c.post("/api/v1/grant/finish", {"code": wrong})
+        assert status == 401 and doc["error"] == "wrong_code" and doc["attempts_left"] == 4
+        validate("error", doc)
+        c.token = None
+        status, doc, _ = grant_start(c, ["power_off"])
+        assert status == 401
+    finally:
+        c.stop()
+
