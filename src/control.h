@@ -18,7 +18,8 @@ typedef enum {
   CTL_NO_APP,
   CTL_DISABLED,
   CTL_RATE_LIMITED,
-  CTL_SYSTEM_ERROR
+  CTL_SYSTEM_ERROR,
+  CTL_BAD_INPUT
 } ctl_rc;
 
 /* Resets the standby rate limit. */
@@ -30,5 +31,10 @@ ctl_rc control_close(const char *expected_title_or_null, int *rc_out);
 /* rc_out: seconds to wait on CTL_RATE_LIMITED, console code on
  * CTL_SYSTEM_ERROR. */
 ctl_rc control_standby(const config *c, int *rc_out);
+/* Message on the TV: control characters (except \n) removed, invalid UTF-8
+ * replaced, cut to PS5H_NOTIFY_MAX bytes at a character boundary; at most
+ * PS5H_NOTIFY_BURST per PS5H_NOTIFY_WINDOW_S. retry_after in seconds on
+ * CTL_RATE_LIMITED; CTL_BAD_INPUT when nothing is left to show. */
+ctl_rc control_notify(const char *utf8, int *retry_after);
 
 #endif

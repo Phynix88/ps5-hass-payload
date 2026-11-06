@@ -417,6 +417,25 @@ static void test_apps_rescanned_on_change(void) {
   T_EQ_INT(call("POST", "/api/v1/apps/NEWA00001/launch", "{}"), 200);
 }
 
+
+static void test_notify_codes(void) {
+  setup();
+  T_EQ_INT(call("POST", "/api/v1/notify", "{\"message\":\"Essen ist fertig\"}"), 401);
+  pair();
+  T_EQ_INT(call("POST", "/api/v1/notify", "{\"message\":\"Essen ist fertig\"}"), 200);
+  T_EQ_STR(fake.last_notify, "Essen ist fertig");
+  T_EQ_INT(call("POST", "/api/v1/notify", "{}"), 400);
+  T_EQ_INT(call("POST", "/api/v1/notify", "{\"message\":5}"), 400);
+  T_EQ_INT(call("POST", "/api/v1/notify", "{\"message\":\"\"}"), 400);
+  for (int i = 0; i < 4; i++) {
+    call("POST", "/api/v1/notify", "{\"message\":\"x\"}");
+  }
+  T_EQ_INT(call("POST", "/api/v1/notify", "{\"message\":\"x\"}"), 429);
+  T_ASSERT(strstr(body, "\"error\":\"rate_limited\""));
+  T_ASSERT(strstr(body, "\"retry_after\":"));
+  T_EQ_INT(call("GET", "/api/v1/notify", NULL), 405);
+}
+
 int main(void) {
   T_RUN(test_origin_blocked_before_everything);
   T_RUN(test_post_requires_json_and_marker);
@@ -441,6 +460,7 @@ int main(void) {
   T_RUN(test_system_error_has_rc_hex);
   T_RUN(test_alloc_failure_is_500_internal);
   T_RUN(test_apps_rescanned_on_change);
+  T_RUN(test_notify_codes);
   apps_free(&apps);
   T_MAIN();
 }

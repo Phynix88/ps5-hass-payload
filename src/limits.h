@@ -33,6 +33,9 @@
 #define PS5H_REBIND_MIN_MS       1000 /* at most one rebind per second */
 #define PS5H_REBIND_LOG_S        60 /* at most one rebind log line per minute */
 #define PS5H_MAX_APPS            512
+#define PS5H_NOTIFY_MAX          200 /* bytes of a TV message */
+#define PS5H_NOTIFY_BURST        5   /* messages ... */
+#define PS5H_NOTIFY_WINDOW_S     30  /* ... per sliding window */
 #define PS5H_DATA_DIR            "/data/ps5-hass"
 
 #endif

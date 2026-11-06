@@ -145,6 +145,55 @@ static void test_standby_failure_is_system_error(void) {
   T_EQ_INT(rc, -3);
 }
 
+
+static void test_notify_sends_sanitized(void) {
+  int retry = 0;
+  setup();
+  T_EQ_INT(control_notify("Hallo\x01\tWelt\n\xc3\x84\xff", &retry), CTL_OK);
+  T_EQ_STR(fake.last_notify, "HalloWelt\n\xc3\x84\xef\xbf\xbd");
+}
+
+static void test_notify_truncates_200(void) {
+  char msg[400];
+  int retry;
+  setup();
+  for (int i = 0; i < 150; i++) {
+    memcpy(msg + 2 * i, "\xc3\xa4", 2);
+  }
+  msg[300] = '\0';
+  T_EQ_INT(control_notify(msg, &retry), CTL_OK);
+  T_EQ_INT(strlen(fake.last_notify), 200);
+}
+
+static void test_notify_empty_rejected(void) {
+  int retry;
+  setup();
+  T_EQ_INT(control_notify("\x01\x02", &retry), CTL_BAD_INPUT);
+  T_EQ_INT(control_notify("", &retry), CTL_BAD_INPUT);
+  T_EQ_INT(fake.notify_count, 0);
+}
+
+static void test_notify_rate_limited(void) {
+  int retry = 0;
+  setup();
+  for (int i = 0; i < 5; i++) {
+    fake.mono_ms += 1000;
+    T_EQ_INT(control_notify("x", &retry), CTL_OK);
+  }
+  T_EQ_INT(control_notify("x", &retry), CTL_RATE_LIMITED);
+  T_EQ_INT(retry, 26); /* oldest of the five was 4 s ago */
+  fake.mono_ms += 26000;
+  T_EQ_INT(control_notify("x", &retry), CTL_OK);
+}
+
+static void test_notify_failure_500(void) {
+  int retry, rc = 0;
+  setup();
+  fake.notify_rc = -7;
+  T_EQ_INT(control_notify("x", &retry), CTL_SYSTEM_ERROR);
+  (void)rc;
+}
+
 int main(void) {
   T_RUN(test_launch_ok);
   T_RUN(test_launch_already_running);
@@ -160,6 +209,11 @@ int main(void) {
   T_RUN(test_standby_disabled);
   T_RUN(test_standby_rate_limited);
   T_RUN(test_standby_failure_is_system_error);
+  T_RUN(test_notify_sends_sanitized);
+  T_RUN(test_notify_truncates_200);
+  T_RUN(test_notify_empty_rejected);
+  T_RUN(test_notify_rate_limited);
+  T_RUN(test_notify_failure_500);
   apps_free(&apps);
   T_MAIN();
 }

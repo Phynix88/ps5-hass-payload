@@ -200,7 +200,8 @@ typedef enum {
   R_ICON,
   R_LAUNCH,
   R_CLOSE,
-  R_STANDBY
+  R_STANDBY,
+  R_NOTIFY
 } route_id;
 
 /* Fills id (the <ID> path segment) for icon/launch. */
@@ -219,6 +220,7 @@ static route_id match(const char *path, http_method *want, char *id,
       {PREFIX "/apps", HM_GET, R_APPS},
       {PREFIX "/apps/running/close", HM_POST, R_CLOSE},
       {PREFIX "/power/standby", HM_POST, R_STANDBY},
+      {PREFIX "/notify", HM_POST, R_NOTIFY},
   };
   const char *apps = PREFIX "/apps/";
   size_t alen = strlen(apps);
@@ -516,6 +518,29 @@ static void h_standby(route_ctx *ctx, route_resp *out) {
   }
 }
 
+static void h_notify(const jr_t *r, route_resp *out) {
+  char msg[PS5H_MAX_BODY];
+  int retry = 0;
+  if (!jr_string(r, jr_get(r, 0, "message"), msg, sizeof(msg))) {
+    fail(out, 400, "bad_request", "message must be a string");
+    return;
+  }
+  switch (control_notify(msg, &retry)) {
+  case CTL_OK:
+    ok(out);
+    done(out);
+    return;
+  case CTL_BAD_INPUT:
+    fail(out, 400, "bad_request", "message is empty");
+    return;
+  case CTL_RATE_LIMITED:
+    fail_retry(out, 429, "rate_limited", "at most 5 messages per 30 s", retry);
+    return;
+  default:
+    fail(out, 500, "notify_failed", "could not show the message on the TV");
+  }
+}
+
 void route(route_ctx *ctx, const http_req *req, uint32_t peer,
            route_resp *out) {
   static jsmntok_t tok[256];
@@ -590,6 +615,7 @@ void route(route_ctx *ctx, const http_req *req, uint32_t peer,
   case R_LAUNCH: h_launch(ctx, &body, id, out); break;
   case R_CLOSE: h_close(&body, out); break;
   case R_STANDBY: h_standby(ctx, out); break;
+  case R_NOTIFY: h_notify(&body, out); break;
   default: fail(out, 404, "not_found", "unknown path");
   }
 }

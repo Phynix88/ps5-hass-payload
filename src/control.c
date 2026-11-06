@@ -4,14 +4,21 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "json.h"
 #include "limits.h"
 #include "log.h"
 #include "platform.h"
 
 static bool standby_done;
 static int64_t standby_last_ms;
+static int64_t notify_times[PS5H_NOTIFY_BURST]; /* ring, 0 = unused */
+static int notify_next;
 
-void control_init(void) { standby_done = false; }
+void control_init(void) {
+  standby_done = false;
+  memset(notify_times, 0, sizeof(notify_times));
+  notify_next = 0;
+}
 
 ctl_rc control_launch(const app_list *apps, const char *title_id,
                       bool replace_running, int *rc_out) {
@@ -88,5 +95,38 @@ ctl_rc control_standby(const config *c, int *rc_out) {
     log_error("rest mode failed rc=%d", rc);
     return CTL_SYSTEM_ERROR;
   }
+  return CTL_OK;
+}
+
+ctl_rc control_notify(const char *utf8, int *retry_after) {
+  char clean[PS5H_NOTIFY_MAX * 2 + 8], text[PS5H_NOTIFY_MAX + 1];
+  size_t o = 0;
+  int64_t now = plat_mono_ms(), oldest = notify_times[notify_next];
+  int rc;
+
+  *retry_after = 0;
+  /* drop control characters except newline, then repair UTF-8 and cut */
+  for (const char *p = utf8; *p && o < sizeof(clean) - 1; p++) {
+    unsigned char c = (unsigned char)*p;
+    if ((c < 0x20 && c != '\n') || c == 0x7f) {
+      continue;
+    }
+    clean[o++] = (char)c;
+  }
+  clean[o] = '\0';
+  utf8_sanitize(clean, o, text, sizeof(text));
+  if (!text[0]) {
+    return CTL_BAD_INPUT;
+  }
+  if (oldest && now - oldest < PS5H_NOTIFY_WINDOW_S * 1000) {
+    *retry_after = (int)((oldest + PS5H_NOTIFY_WINDOW_S * 1000 - now + 999) / 1000);
+    return CTL_RATE_LIMITED;
+  }
+  if ((rc = plat_notify(text)) < 0) {
+    log_error("notification failed rc=%d", rc);
+    return CTL_SYSTEM_ERROR;
+  }
+  notify_times[notify_next] = now ? now : 1;
+  notify_next = (notify_next + 1) % PS5H_NOTIFY_BURST;
   return CTL_OK;
 }
