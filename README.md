@@ -68,10 +68,14 @@ Everything lives in `/data/ps5-hass/` on the console (reachable via FTP):
 | `device_id` | random id of this console for Home Assistant; survives a reset |
 | `log.txt` | recent log, at most 64 KB together with `log.txt.1` |
 
-- **Allow rest mode from Home Assistant:** set `"power_actions": true` in `config.json` and restart the payload.
-- **Allow power off from Home Assistant:** set `"power_off": true` and restart the payload. Switching the console on
-  again needs the power button (or the controller's PS button).
-- **Allow the fan threshold from Home Assistant:** set `"fan_control": true` and restart the payload. The payload
+- **Allow rest mode, power off or the fan threshold (since v0.3):** in Home Assistant open the PS5 integration's
+  options → **Console permissions** and tick the box. The TV shows `ps5-hass: "Home Assistant" asks to allow …
+  Code: 123456`; enter the code in Home Assistant. Unticking takes a permission away at once, without a code.
+  Without Home Assistant: `POST /grant/start` and `/grant/finish` (see [API.md](API.md#permissions-since-v03)).
+- **The same over FTP:** set `"power_actions"`, `"power_off"` or `"fan_control"` to `true` in `config.json` and
+  restart the payload.
+- **Power off:** switching the console on again needs the power button (or the controller's PS button).
+- **Fan threshold:** the payload
   remembers the console's factory value in `fan_stock_c` (91 °C on FW 13.60) and never sets a higher one; allowed
   range 45–85 °C. `fan_target_c` is the threshold Home Assistant asked for (`0` = factory value). If the console
   resets the value, the payload sets it again; if another tool changes it, the payload stops and reports it in

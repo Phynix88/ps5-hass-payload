@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.3.0
+
+- Grant rest mode, power off and the fan threshold from a paired client with a code shown on the TV:
+  `POST /grant/start`, `/grant/finish`; take them away without a code: `POST /grant/revoke`. Editing `config.json`
+  over FTP still works.
+- Grant codes have their own slot and failure budget, separate from pairing; a code belongs to the client that asked.
+- `/info.permissions`: for each permission `allowed` and `available`.
+- Taking fan control away writes the console's factory threshold back.
+
 ## v0.2.0
 
 - `POST /notify`: messages from Home Assistant as notifications on the TV (UTF-8, 5 per 30 s).

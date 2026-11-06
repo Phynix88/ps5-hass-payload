@@ -44,6 +44,8 @@ Diagnostics: `/api/v1/info` (`last_error`, `capabilities`) and `ftp://$PS5:2121/
 | 15 | `/state.payloads` | kstuff, ftpsrv, ShadowMount, websrv listed; no Sony processes |
 | 16 | `fan_control: true`, `POST /fan` 70, start a game, `POST /fan` 0 | 70 set, restored after the game start, back to 91 |
 | 17 | `power_off: true`, `POST /power/off` (separate yes) | console powers off |
+| 18 | HA options → Console permissions: untick power off, tick it again, enter the code from the TV | button disappears, code shown with the label, button comes back, `config.json` updated |
+| 19 | untick fan control while a threshold is set | threshold back to the factory value (91 °C) |
 
 ## Results
 
