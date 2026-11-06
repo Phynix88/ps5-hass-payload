@@ -1,0 +1,11 @@
+{
+  "applicationCategoryType": 65536,
+  "applicationDrmType": "free",
+  "titleId": "PPSA00002",
+  "localizedParameters": {
+    "defaultLanguage": "en-US",
+    "en-US": {
+      "titleName": "Homebrew Two"
+    }
+  }
+}

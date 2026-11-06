@@ -1,0 +1,18 @@
+{
+  "applicationCategoryType": 0,
+  "applicationDrmType": "standard",
+  "contentVersion": "01.007.000",
+  "titleId": "PPSA00001",
+  "localizedParameters": {
+    "defaultLanguage": "en-GB",
+    "de-DE": {
+      "titleName": "Testspiel Eins"
+    },
+    "en-GB": {
+      "titleName": "Test Game One"
+    },
+    "en-US": {
+      "titleName": "Test Game One US"
+    }
+  }
+}

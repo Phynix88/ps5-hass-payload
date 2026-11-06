@@ -1,0 +1,10 @@
+{
+  "applicationCategoryType": 65536,
+  "titleId": "PLDM00001",
+  "localizedParameters": {
+    "defaultLanguage": "en-US",
+    "en-US": {
+      "titleName": "Payload Thing"
+    }
+  }
+}
