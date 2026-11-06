@@ -14,6 +14,7 @@
 
 #include <arpa/inet.h>
 #include <dlfcn.h>
+#include <fcntl.h>
 #include <ifaddrs.h>
 #include <net/if.h>
 #include <netinet/in.h>
@@ -24,6 +25,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/ioctl.h>
 #include <sys/statvfs.h>
 #include <sys/syscall.h>
 #include <sys/sysctl.h>
@@ -81,7 +83,28 @@ static int (*opt_standby)(void);
 static int (*opt_param_int)(int, int *);
 /* Signature disputed between sources; called with oversized buffers. */
 static int (*opt_fan)(void *, void *);
-static bool temps_ok;
+static int (*opt_turnoff)(void);
+static bool temps_ok, fan_device_ok;
+
+/* Fan threshold of the system driver. Layout and ioctls as documented by
+ * phantomptr/ps5upload (payload/include/fan_servo.h): 28 bytes, target in
+ * byte 5; GET 0xC01C8F08, SET 0xC01C8F07. Checked on FW 13.60: factory 91 C. */
+#define FAN_DEVICE "/dev/icc_fan"
+#define FAN_LEN 28
+#define FAN_TARGET 5
+#define FAN_IOCTL_GET 0xC01C8F08UL
+#define FAN_IOCTL_SET 0xC01C8F07UL
+
+static int fan_ioctl(unsigned long req, uint8_t buf[FAN_LEN]) {
+  int fd = open(FAN_DEVICE, O_RDONLY, 0);
+  int rc;
+  if (fd < 0) {
+    return -1;
+  }
+  rc = ioctl(fd, req, buf);
+  close(fd);
+  return rc < 0 ? -1 : 0;
+}
 
 static void *sym(const char *lib, const char *name) {
   void *h = dlopen(lib, RTLD_LAZY);
@@ -94,7 +117,12 @@ static void resolve(void) {
   opt_standby = sym("libSceSystemService.sprx", "sceSystemStateMgrEnterStandby");
   opt_param_int = sym("libSceSystemService.sprx", "sceSystemServiceParamGetInt");
   opt_fan = sym("libkernel_sys.sprx", "sceKernelGetCurrentFanDuty");
+  opt_turnoff = sym("libSceSystemService.sprx", "sceSystemStateMgrTurnOff");
   temps_ok = sceKernelGetCpuTemperature(&t) == 0 && t >= 0 && t <= 130;
+  {
+    uint8_t buf[FAN_LEN] = {0};
+    fan_device_ok = fan_ioctl(FAN_IOCTL_GET, buf) == 0;
+  }
 }
 
 plat_caps plat_capabilities(void) {
@@ -106,6 +134,8 @@ plat_caps plat_capabilities(void) {
   c.fan = opt_fan != NULL;
   c.temps = temps_ok;
   c.language = opt_param_int != NULL;
+  c.power_off = opt_turnoff != NULL;
+  c.fan_control = fan_device_ok;
   return c;
 }
 
@@ -362,4 +392,48 @@ int plat_ipv4_list(uint32_t *addrs, int max) {
   }
   freeifaddrs(ifs);
   return n;
+}
+
+/* --- v0.2 ---------------------------------------------------------------- */
+
+int plat_proc_names(plat_name *names, int max) {
+  size_t size;
+  uint8_t *buf = proc_list(&size);
+  int n = 0;
+  if (!buf) {
+    return 0;
+  }
+  for (uint8_t *p = buf; p < buf + size && n < max;) {
+    struct kinfo_proc *ki = (struct kinfo_proc *)p;
+    if (!record_ok(ki, p, buf + size)) {
+      break;
+    }
+    p += ki->ki_structsize;
+    snprintf(names[n++], sizeof(plat_name), "%s", ki->ki_comm);
+  }
+  free(buf);
+  return n;
+}
+
+int plat_power_off(void) {
+  pthread_once(&resolve_once, resolve);
+  return opt_turnoff ? opt_turnoff() : -1;
+}
+
+int plat_fan_get(int *target_c) {
+  uint8_t buf[FAN_LEN] = {0};
+  if (fan_ioctl(FAN_IOCTL_GET, buf)) {
+    return -1;
+  }
+  *target_c = buf[FAN_TARGET];
+  return 0;
+}
+
+int plat_fan_set(int target_c) {
+  uint8_t buf[FAN_LEN] = {0};
+  if (target_c < 1 || target_c > 255) {
+    return -1;
+  }
+  buf[FAN_TARGET] = (uint8_t)target_c;
+  return fan_ioctl(FAN_IOCTL_SET, buf);
 }

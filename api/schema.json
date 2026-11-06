@@ -4,88 +4,202 @@
   "title": "ps5-hass API v1 responses",
   "description": "One definition per answer of /api/v1. Use {\"$ref\": \"#/$defs/<name>\"}.",
   "$defs": {
-    "title_id": { "type": "string", "pattern": "^[A-Z]{4}[0-9]{5}$" },
-    "opt_int": { "type": ["integer", "null"] },
-
+    "title_id": {
+      "type": "string",
+      "pattern": "^[A-Z]{4}[0-9]{5}$"
+    },
+    "opt_int": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
     "ok": {
       "type": "object",
-      "properties": { "result": { "const": "ok" } },
-      "required": ["result"],
+      "properties": {
+        "result": {
+          "const": "ok"
+        }
+      },
+      "required": [
+        "result"
+      ],
       "additionalProperties": false
     },
-
     "info": {
       "type": "object",
       "properties": {
-        "result": { "const": "ok" },
-        "name": { "const": "ps5-hass" },
-        "version": { "type": "string" },
-        "commit": { "type": "string" },
-        "api": { "const": 1 },
-        "device_id": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
-        "model": { "type": "string" },
-        "firmware": { "type": "string" },
-        "paired": { "type": "boolean" },
-        "power_actions": { "type": "boolean" },
-        "config": { "enum": ["ok", "recovered"] },
+        "result": {
+          "const": "ok"
+        },
+        "name": {
+          "const": "ps5-hass"
+        },
+        "version": {
+          "type": "string"
+        },
+        "commit": {
+          "type": "string"
+        },
+        "api": {
+          "const": 1
+        },
+        "device_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "model": {
+          "type": "string"
+        },
+        "firmware": {
+          "type": "string"
+        },
+        "paired": {
+          "type": "boolean"
+        },
+        "power_actions": {
+          "type": "boolean"
+        },
+        "config": {
+          "enum": [
+            "ok",
+            "recovered"
+          ]
+        },
         "capabilities": {
           "type": "object",
           "properties": {
-            "temps": { "type": "boolean" },
-            "fan": { "type": "boolean" },
-            "notify": { "type": "boolean" },
-            "random": { "type": "boolean" },
-            "launch": { "type": "boolean" },
-            "standby": { "type": "boolean" },
-            "mdns": { "type": "boolean" }
+            "temps": {
+              "type": "boolean"
+            },
+            "fan": {
+              "type": "boolean"
+            },
+            "notify": {
+              "type": "boolean"
+            },
+            "random": {
+              "type": "boolean"
+            },
+            "launch": {
+              "type": "boolean"
+            },
+            "standby": {
+              "type": "boolean"
+            },
+            "mdns": {
+              "type": "boolean"
+            },
+            "power_off": {
+              "type": "boolean"
+            },
+            "fan_control": {
+              "type": "boolean"
+            }
           },
-          "required": ["temps", "fan", "notify", "random", "launch", "standby", "mdns"],
+          "required": [
+            "temps",
+            "fan",
+            "notify",
+            "random",
+            "launch",
+            "standby",
+            "mdns",
+            "power_off",
+            "fan_control"
+          ],
           "additionalProperties": false
         },
-        "last_error": { "type": ["string", "null"] }
+        "last_error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
       },
-      "required": ["result", "name", "version", "commit", "api", "device_id", "model",
-                   "firmware", "paired", "power_actions", "config", "capabilities",
-                   "last_error"],
+      "required": [
+        "result",
+        "name",
+        "version",
+        "commit",
+        "api",
+        "device_id",
+        "model",
+        "firmware",
+        "paired",
+        "power_actions",
+        "config",
+        "capabilities",
+        "last_error"
+      ],
       "additionalProperties": false
     },
-
     "pair_start": {
       "type": "object",
       "properties": {
-        "result": { "const": "ok" },
-        "expires_in": { "type": "integer", "minimum": 1 }
+        "result": {
+          "const": "ok"
+        },
+        "expires_in": {
+          "type": "integer",
+          "minimum": 1
+        }
       },
-      "required": ["result", "expires_in"],
+      "required": [
+        "result",
+        "expires_in"
+      ],
       "additionalProperties": false
     },
-
     "pair_finish": {
       "type": "object",
       "properties": {
-        "result": { "const": "ok" },
-        "token": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+        "result": {
+          "const": "ok"
+        },
+        "token": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
       },
-      "required": ["result", "token"],
+      "required": [
+        "result",
+        "token"
+      ],
       "additionalProperties": false
     },
-
     "state": {
       "type": "object",
       "properties": {
-        "result": { "const": "ok" },
-        "in_app": { "type": "boolean" },
+        "result": {
+          "const": "ok"
+        },
+        "in_app": {
+          "type": "boolean"
+        },
         "app": {
           "oneOf": [
-            { "type": "null" },
+            {
+              "type": "null"
+            },
             {
               "type": "object",
               "properties": {
-                "title_id": { "$ref": "#/$defs/title_id" },
-                "name": { "type": "string" },
-                "app_id": { "type": "integer" }
+                "title_id": {
+                  "$ref": "#/$defs/title_id"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "app_id": {
+                  "type": "integer"
+                }
               },
-              "required": ["title_id", "name", "app_id"],
+              "required": [
+                "title_id",
+                "name",
+                "app_id"
+              ],
               "additionalProperties": false
             }
           ]
@@ -93,91 +207,264 @@
         "temps": {
           "type": "object",
           "properties": {
-            "cpu": { "$ref": "#/$defs/opt_int" },
-            "soc": { "$ref": "#/$defs/opt_int" }
+            "cpu": {
+              "$ref": "#/$defs/opt_int"
+            },
+            "soc": {
+              "$ref": "#/$defs/opt_int"
+            }
           },
-          "required": ["cpu", "soc"],
+          "required": [
+            "cpu",
+            "soc"
+          ],
           "additionalProperties": false
         },
-        "fan_raw": { "$ref": "#/$defs/opt_int" },
+        "fan_raw": {
+          "$ref": "#/$defs/opt_int"
+        },
         "storage": {
           "type": "object",
           "properties": {
-            "data_free_mb": { "$ref": "#/$defs/opt_int" },
-            "data_total_mb": { "$ref": "#/$defs/opt_int" },
-            "user_free_mb": { "$ref": "#/$defs/opt_int" },
-            "user_total_mb": { "$ref": "#/$defs/opt_int" }
+            "data_free_mb": {
+              "$ref": "#/$defs/opt_int"
+            },
+            "data_total_mb": {
+              "$ref": "#/$defs/opt_int"
+            },
+            "user_free_mb": {
+              "$ref": "#/$defs/opt_int"
+            },
+            "user_total_mb": {
+              "$ref": "#/$defs/opt_int"
+            }
           },
-          "required": ["data_free_mb", "data_total_mb", "user_free_mb", "user_total_mb"],
+          "required": [
+            "data_free_mb",
+            "data_total_mb",
+            "user_free_mb",
+            "user_total_mb"
+          ],
           "additionalProperties": false
         },
-        "uptime_s": { "type": "integer" },
-        "payload_uptime_s": { "type": "integer" },
-        "apps_etag": { "type": "string", "pattern": "^[0-9a-f]{16}$" }
+        "uptime_s": {
+          "type": "integer"
+        },
+        "payload_uptime_s": {
+          "type": "integer"
+        },
+        "apps_etag": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{16}$"
+        },
+        "payloads": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 19
+          },
+          "maxItems": 32
+        },
+        "fan": {
+          "$ref": "#/$defs/fan_state"
+        }
       },
-      "required": ["result", "in_app", "app", "temps", "fan_raw", "storage", "uptime_s",
-                   "payload_uptime_s", "apps_etag"],
+      "required": [
+        "result",
+        "in_app",
+        "app",
+        "temps",
+        "fan_raw",
+        "storage",
+        "uptime_s",
+        "payload_uptime_s",
+        "apps_etag",
+        "payloads",
+        "fan"
+      ],
       "additionalProperties": false
     },
-
     "apps": {
       "type": "object",
       "properties": {
-        "result": { "const": "ok" },
-        "etag": { "type": "string", "pattern": "^[0-9a-f]{16}$" },
+        "result": {
+          "const": "ok"
+        },
+        "etag": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{16}$"
+        },
         "apps": {
           "type": "array",
           "items": {
             "type": "object",
             "properties": {
-              "title_id": { "$ref": "#/$defs/title_id" },
-              "name": { "type": "string", "minLength": 1 },
-              "version": { "type": ["string", "null"] },
-              "kind": { "enum": ["game", "app"] },
-              "category": { "$ref": "#/$defs/opt_int" },
-              "has_icon": { "type": "boolean" }
+              "title_id": {
+                "$ref": "#/$defs/title_id"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "version": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "kind": {
+                "enum": [
+                  "game",
+                  "app"
+                ]
+              },
+              "category": {
+                "$ref": "#/$defs/opt_int"
+              },
+              "has_icon": {
+                "type": "boolean"
+              }
             },
-            "required": ["title_id", "name", "version", "kind", "category", "has_icon"],
+            "required": [
+              "title_id",
+              "name",
+              "version",
+              "kind",
+              "category",
+              "has_icon"
+            ],
             "additionalProperties": false
           }
         }
       },
-      "required": ["result", "etag", "apps"],
+      "required": [
+        "result",
+        "etag",
+        "apps"
+      ],
       "additionalProperties": false
     },
-
     "launch": {
       "type": "object",
       "properties": {
-        "result": { "const": "ok" },
-        "already_running": { "type": "boolean" },
-        "app_id": { "type": "integer" }
+        "result": {
+          "const": "ok"
+        },
+        "already_running": {
+          "type": "boolean"
+        },
+        "app_id": {
+          "type": "integer"
+        }
       },
-      "required": ["result", "already_running"],
+      "required": [
+        "result",
+        "already_running"
+      ],
       "additionalProperties": false
     },
-
     "error": {
       "type": "object",
       "properties": {
-        "result": { "const": "error" },
-        "error": {
-          "enum": ["bad_request", "bad_title_id", "unauthorized", "wrong_code",
-                   "origin_forbidden", "browser_guard", "host_forbidden",
-                   "address_forbidden", "power_actions_disabled", "not_found",
-                   "not_installed", "method_not_allowed", "no_code", "code_exhausted",
-                   "token_limit", "other_app_running", "no_user", "title_mismatch",
-                   "no_app", "length_required", "body_too_large", "locked",
-                   "rate_limited", "headers_too_large", "notify_failed",
-                   "random_unavailable", "system_error", "internal"]
+        "result": {
+          "const": "error"
         },
-        "message": { "type": "string" },
-        "attempts_left": { "type": "integer", "minimum": 0 },
-        "retry_after": { "type": "integer", "minimum": 0 },
-        "rc": { "type": "integer" },
-        "rc_hex": { "type": "string", "pattern": "^0x[0-9a-f]{8}$" }
+        "error": {
+          "enum": [
+            "bad_request",
+            "bad_title_id",
+            "unauthorized",
+            "wrong_code",
+            "origin_forbidden",
+            "browser_guard",
+            "host_forbidden",
+            "address_forbidden",
+            "power_actions_disabled",
+            "not_found",
+            "not_installed",
+            "method_not_allowed",
+            "no_code",
+            "code_exhausted",
+            "token_limit",
+            "other_app_running",
+            "no_user",
+            "title_mismatch",
+            "no_app",
+            "length_required",
+            "body_too_large",
+            "locked",
+            "rate_limited",
+            "headers_too_large",
+            "notify_failed",
+            "random_unavailable",
+            "system_error",
+            "internal",
+            "power_off_disabled",
+            "fan_control_disabled",
+            "fan_above_stock"
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "attempts_left": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "retry_after": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rc": {
+          "type": "integer"
+        },
+        "rc_hex": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{8}$"
+        }
       },
-      "required": ["result", "error", "message"],
+      "required": [
+        "result",
+        "error",
+        "message"
+      ],
+      "additionalProperties": false
+    },
+    "fan_state": {
+      "type": "object",
+      "properties": {
+        "target_c": {
+          "$ref": "#/$defs/opt_int"
+        },
+        "current_c": {
+          "$ref": "#/$defs/opt_int"
+        },
+        "stock_c": {
+          "$ref": "#/$defs/opt_int"
+        }
+      },
+      "required": [
+        "target_c",
+        "current_c",
+        "stock_c"
+      ],
+      "additionalProperties": false
+    },
+    "fan": {
+      "type": "object",
+      "properties": {
+        "result": {
+          "const": "ok"
+        },
+        "fan": {
+          "$ref": "#/$defs/fan_state"
+        }
+      },
+      "required": [
+        "result",
+        "fan"
+      ],
       "additionalProperties": false
     }
   }

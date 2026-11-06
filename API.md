@@ -56,7 +56,7 @@ There are no CORS headers.
 
 | Method and path | Token | Answer |
 |---|---|---|
-| `GET /info` | no | `name`, `version`, `commit`, `api` (1), `device_id`, `model`, `firmware`, `paired`, `power_actions`, `config` (`ok`/`recovered`), `capabilities{temps,fan,notify,random,launch,standby,mdns}`, `last_error` |
+| `GET /info` | no | `name`, `version`, `commit`, `api` (1), `device_id`, `model`, `firmware`, `paired`, `power_actions`, `config` (`ok`/`recovered`), `capabilities{temps,fan,notify,random,launch,standby,mdns,power_off,fan_control}`, `last_error` |
 | `POST /pair/start` | no | `{"expires_in":120}` |
 | `POST /pair/finish` | no | `{"token":"<64 hex>"}` |
 | `POST /pair/revoke` | yes | `{}` |
@@ -66,6 +66,9 @@ There are no CORS headers.
 | `POST /apps/<ID>/launch` | yes | body `{"replace_running":false}` (optional) → `{"already_running":false,"app_id":24}` |
 | `POST /apps/running/close` | yes | body `{"title_id":"PPSA…"}` (optional) |
 | `POST /power/standby` | yes | rest mode; only when `power_actions` is `true` in `config.json`; at most once per 10 s |
+| `POST /power/off` | yes | power off (not rest mode); only when `power_off` is `true` in `config.json` (since v0.2); shares the 10 s limit with standby |
+| `POST /notify` | yes | body `{"message":"Dinner is ready"}`: shown as a notification on the TV (UTF-8, cut to 200 bytes, control characters removed); at most 5 per 30 s (since v0.2) |
+| `POST /fan` | yes | body `{"threshold_c":70}` (45..85) or `{"threshold_c":0}` (back to the console's own value); only when `fan_control` is `true` in `config.json`; answer `{"fan":{…}}` (since v0.2) |
 
 Success answers carry `"result":"ok"`. `<ID>` must match `^[A-Z]{4}[0-9]{5}$`.
 
@@ -85,6 +88,24 @@ Success answers carry `"result":"ok"`. `<ID>` must match `^[A-Z]{4}[0-9]{5}$`.
 - `fan_raw` is the raw value from the console. Reading it as "value / 10 ≈ percent" is an interpretation, not
   documented by Sony.
 - When `apps_etag` changes, fetch `/apps` again.
+- `payloads` (since v0.2): names of running payload processes (`kstuff.elf`, `ftpsrv.elf`, …), Sony's own
+  processes left out; names longer than 19 characters are cut by the kernel.
+- `fan` (since v0.2): `{"target_c": …, "current_c": …, "stock_c": …}` – our target (null = the console's own),
+  the value the fan driver uses now, and the console's factory value (91 °C on FW 13.60), each null when unknown.
+
+### Fan threshold (since v0.2)
+
+The PS5's fan driver speeds up above a temperature threshold. `POST /fan` changes that threshold, the same way
+[ps5upload](https://github.com/phantomptr/ps5upload) and ps5-fan-control do (`/dev/icc_fan`). There is no fan curve
+and no direct speed control.
+
+- Off unless `"fan_control": true` is set in `config.json` on the console (`403 fan_control_disabled`).
+- Allowed: 45 to 85 °C, and **never above the console's own value** (`409 fan_above_stock`): the console must never
+  run hotter than Sony intends. The factory value is learned once (the first reading that is not our own target)
+  and kept in `config.json`.
+- The console resets the threshold at every game start; the payload checks every 5 s and writes the target again.
+  If a different tool sets another value, the payload stops and reports it in `last_error` instead of fighting.
+- `{"threshold_c": 0}` writes the factory value back and stops overriding.
 
 ### `/apps`
 
@@ -118,10 +139,10 @@ Success answers carry `"result":"ok"`. `<ID>` must match `^[A-Z]{4}[0-9]{5}$`.
 |---|---|---|
 | 400 | `bad_request`, `bad_title_id` | |
 | 401 | `unauthorized` (token missing or wrong), `wrong_code` | `attempts_left` for `wrong_code` |
-| 403 | `origin_forbidden`, `browser_guard`, `host_forbidden`, `address_forbidden`, `power_actions_disabled` | |
+| 403 | `origin_forbidden`, `browser_guard`, `host_forbidden`, `address_forbidden`, `power_actions_disabled`, `power_off_disabled`, `fan_control_disabled` | |
 | 404 | `not_found`, `not_installed` | |
 | 405 | `method_not_allowed` | |
-| 409 | `no_code`, `code_exhausted`, `token_limit`, `other_app_running`, `no_user`, `title_mismatch`, `no_app` | |
+| 409 | `no_code`, `code_exhausted`, `token_limit`, `other_app_running`, `no_user`, `title_mismatch`, `no_app`, `fan_above_stock` | |
 | 411 | `length_required` (chunked body, or `POST` without `Content-Length`) | |
 | 413 | `body_too_large` (more than 4096 bytes) | |
 | 429 | `locked`, `rate_limited` | `retry_after` (seconds) |

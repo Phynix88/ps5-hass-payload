@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.2.0
+
+- `POST /notify`: messages from Home Assistant as notifications on the TV (UTF-8, 5 per 30 s).
+- `/state.payloads`: running payloads (kstuff, ftpsrv, ShadowMount, …), Sony processes left out.
+- `POST /power/off`: power off, with its own permission `power_off` in `config.json`.
+- `POST /fan` and `/state.fan`: fan threshold 45–85 °C, never above the console's factory value, kept after game
+  starts, stops when another tool controls the fan; permission `fan_control` in `config.json`.
+- Controller battery was investigated and dropped: the console refuses pad access from a payload.
+
 ## v0.1.0
 
 First release.

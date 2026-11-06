@@ -40,6 +40,10 @@ Diagnostics: `/api/v1/info` (`last_error`, `capabilities`) and `ftp://$PS5:2121/
 | 11 | restart with autoload | payload comes up, pairing kept |
 | 12 | `power_actions: true`, `POST /power/standby` | console goes to rest mode (separate yes) |
 | 13 | `no_user` after waking via Remote Play | only if easy to set up |
+| 14 | `POST /notify` with umlauts | message on the TV, umlauts correct |
+| 15 | `/state.payloads` | kstuff, ftpsrv, ShadowMount, websrv listed; no Sony processes |
+| 16 | `fan_control: true`, `POST /fan` 70, start a game, `POST /fan` 0 | 70 set, restored after the game start, back to 91 |
+| 17 | `power_off: true`, `POST /power/off` (separate yes) | console powers off |
 
 ## Results
 

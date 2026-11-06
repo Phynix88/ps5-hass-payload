@@ -35,13 +35,13 @@ def free_port():
 class Console:
     """A running ps5-hass-host with its own fake root."""
 
-    def __init__(self, tmp, env_extra=None):
+    def __init__(self, tmp, env_extra=None, config_extra=None):
         self.root = tmp
         shutil.copytree(ROOT / "tests" / "data" / "apps", tmp, dirs_exist_ok=True)
         (tmp / "data" / "ps5-hass").mkdir(parents=True, exist_ok=True)
         self.port = free_port()
         (tmp / "data" / "ps5-hass" / "config.json").write_text(
-            json.dumps({"schema": 1, "port": self.port})
+            json.dumps({"schema": 1, "port": self.port, **(config_extra or {})})
         )
         env = dict(os.environ, PS5HASS_ROOT=str(tmp), **(env_extra or {}))
         self.proc = subprocess.Popen([str(HOST_BIN)], env=env)
@@ -285,5 +285,61 @@ def test_no_user(tmp_path):
         status, doc, _ = c.post("/api/v1/apps/PPSA00001/launch")
         assert status == 409 and doc["error"] == "no_user"
         validate("error", doc)
+    finally:
+        c.stop()
+
+
+def test_notify(paired):
+    status, doc, _ = paired.post("/api/v1/notify", {"message": "Essen ist fertig, Grüße"})
+    assert status == 200
+    validate("ok", doc)
+    assert (paired.root / "fake-notify.txt").read_text() == "Essen ist fertig, Grüße"
+    for _ in range(4):
+        paired.post("/api/v1/notify", {"message": "x"})
+    status, doc, _ = paired.post("/api/v1/notify", {"message": "x"})
+    assert status == 429 and doc["error"] == "rate_limited"
+    validate("error", doc)
+
+
+def test_state_has_payloads_and_fan(paired):
+    status, doc, _ = paired.get("/api/v1/state")
+    validate("state", doc)
+    assert doc["payloads"] == []
+    # reading the threshold needs no permission; setting it does
+    assert doc["fan"] == {"target_c": None, "current_c": 91, "stock_c": 91}
+
+
+def test_power_off_and_fan_disabled_by_default(paired):
+    status, doc, _ = paired.post("/api/v1/power/off")
+    assert status == 403 and doc["error"] == "power_off_disabled"
+    validate("error", doc)
+    status, doc, _ = paired.post("/api/v1/fan", {"threshold_c": 70})
+    assert status == 403 and doc["error"] == "fan_control_disabled"
+    info = paired.get("/api/v1/info")[1]
+    assert info["capabilities"]["power_off"] is False
+    assert info["capabilities"]["fan_control"] is False
+
+
+def test_power_off_and_fan_enabled(tmp_path):
+    c = Console(tmp_path, config_extra={"power_off": True, "fan_control": True})
+    try:
+        c.pair()
+        info = c.get("/api/v1/info")[1]
+        validate("info", info)
+        assert info["capabilities"]["power_off"] and info["capabilities"]["fan_control"]
+        status, doc, _ = c.post("/api/v1/fan", {"threshold_c": 70})
+        assert status == 200
+        validate("fan", doc)
+        assert doc["fan"] == {"target_c": 70, "current_c": 70, "stock_c": 91}
+        status, doc, _ = c.post("/api/v1/fan", {"threshold_c": 95})
+        assert status == 400
+        status, doc, _ = c.post("/api/v1/fan", {"threshold_c": 0})
+        assert status == 200 and doc["fan"]["current_c"] == 91
+        state = c.get("/api/v1/state")[1]
+        validate("state", state)
+        assert state["fan"]["stock_c"] == 91
+        status, doc, _ = c.post("/api/v1/power/off")
+        assert status == 200
+        validate("ok", doc)
     finally:
         c.stop()
