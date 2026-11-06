@@ -52,6 +52,7 @@ Diagnostics: `/api/v1/info` (`last_error`, `capabilities`) and `ftp://$PS5:2121/
 | Date | Build | Passed | Not tested |
 |---|---|---|---|
 | 2026-11-06 | `5c8efbd` | 1–9, 12 | 10, 11, 13 |
+| 2026-11-06 | `ec1dc3f` (v0.3 test) | 18, 19 | – |
 
 Details and findings (e.g. the PS5's monotonic clock keeps running in rest mode; recovery happens through the
 `accept` error path, errno 163) are in section 15 of the design spec.
