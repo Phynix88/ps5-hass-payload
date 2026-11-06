@@ -1,4 +1,4 @@
-/* Pairing code, failure budget, tokens (design spec section 6).
+/* Pairing code, failure budget, tokens.
  * SPDX-License-Identifier: GPL-3.0-or-later */
 #ifndef PS5H_AUTH_H
 #define PS5H_AUTH_H

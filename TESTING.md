@@ -3,11 +3,11 @@
 Unit tests, fuzzing and end-to-end tests run on Linux/macOS (`make -f Makefile.host test e2e`, `fuzz`). This file is
 the checklist for a real PS5. It sends files to the console and changes its settings: use your own console only.
 
-## Setup (port 8182 while ps5-status still uses 8181)
+## Setup (test port 8182, so a running copy on 8181 is not disturbed)
 
 ```sh
 PS5=<console IP>
-# config with the test port; the payload creates everything else
+# config with the test port (overwrites config.json: pairings and permissions are lost)
 printf '{"schema":1,"port":8182}' > /tmp/ps5-hass-config.json
 curl -s --ftp-create-dirs -T /tmp/ps5-hass-config.json ftp://$PS5:2121/data/ps5-hass/config.json
 curl -s --ftp-create-dirs -T ps5-hass.elf ftp://$PS5:2121/data/ps5-hass-test/ps5-hass.elf
@@ -47,12 +47,7 @@ Diagnostics: `/api/v1/info` (`last_error`, `capabilities`) and `ftp://$PS5:2121/
 | 18 | HA options → Console permissions: untick power off, tick it again, enter the code from the TV | button disappears, code shown with the label, button comes back, `config.json` updated |
 | 19 | untick fan control while a threshold is set | threshold back to the factory value (91 °C) |
 
-## Results
+## Known console behaviour
 
-| Date | Build | Passed | Not tested |
-|---|---|---|---|
-| 2026-11-06 | `5c8efbd` | 1–9, 12 | 10, 11, 13 |
-| 2026-11-06 | `ec1dc3f` (v0.3 test) | 18, 19 | – |
-
-Details and findings (e.g. the PS5's monotonic clock keeps running in rest mode; recovery happens through the
-`accept` error path, errno 163) are in section 15 of the design spec.
+- The PS5's monotonic clock keeps running in rest mode; after waking up, the payload recovers through the `accept`
+  error path (errno 163).

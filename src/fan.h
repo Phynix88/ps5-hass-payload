@@ -1,4 +1,4 @@
-/* Fan threshold of the system fan driver, with a watcher (design v0.2 §3.4).
+/* Fan threshold of the system fan driver, with a watcher.
  * Technique as documented by phantomptr/ps5upload (fan_servo.h, fan_map.h).
  * SPDX-License-Identifier: GPL-3.0-or-later */
 #ifndef PS5H_FAN_H

@@ -7,3 +7,9 @@ __pycache__/
 
 # working plans stay local (docs/superpowers/plans)
 docs/superpowers/plans/
+
+# working documents stay local
+docs/specs/
+docs/superpowers/
+tools/probe/
+tools/probe2/

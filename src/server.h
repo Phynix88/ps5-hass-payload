@@ -1,5 +1,4 @@
-/* Sockets, poll loop, deadlines, file streaming, waking up
- * (design spec sections 4 and 8).
+/* Sockets, poll loop, deadlines, file streaming, waking up.
  * SPDX-License-Identifier: GPL-3.0-or-later */
 #ifndef PS5H_SERVER_H
 #define PS5H_SERVER_H

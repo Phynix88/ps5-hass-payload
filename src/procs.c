@@ -6,7 +6,7 @@
 
 #include "limits.h"
 
-/* Sony processes seen on FW 13.60 (probe 2026-11-06); everything starting
+/* Sony processes seen on FW 13.60 (checked 2026-11-06); everything starting
  * with "Sce" is Sony's too (also the ones cut to 19 characters). */
 static const char *const SONY[] = {"fs_cleaner.elf", "AgcCompositor.elf",
                                    "orbis_audiod.elf", "mini-syscore.elf"};

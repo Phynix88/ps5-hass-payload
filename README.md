@@ -190,7 +190,7 @@ Other systems work the same way as long as `llvm-config --bindir` contains all t
 example, ships `lld` as a separate package; put symlinks to everything into one folder and point a small
 `llvm-config` wrapper at it, as `shell.nix` does). Untested.
 
-Design: [docs/specs](docs/specs/). Testing on a console: [TESTING.md](TESTING.md).
+API: [API.md](API.md). Testing on a console: [TESTING.md](TESTING.md).
 
 ## License
 

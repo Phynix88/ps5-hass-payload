@@ -1,5 +1,5 @@
 /* ps5-hass: Home Assistant bridge for jailbroken PS5 consoles.
- * Start order and main loop (design spec section 4).
+ * Start order and main loop.
  * SPDX-License-Identifier: GPL-3.0-or-later */
 #include <signal.h>
 #include <stdio.h>

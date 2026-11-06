@@ -1,4 +1,4 @@
-/* config.json and device_id (design spec section 4).
+/* config.json and device_id.
  * SPDX-License-Identifier: GPL-3.0-or-later */
 #ifndef PS5H_CONFIG_H
 #define PS5H_CONFIG_H

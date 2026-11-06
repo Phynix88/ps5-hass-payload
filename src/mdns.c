@@ -1,5 +1,5 @@
 /* mDNS announcement of _ps5-hass._tcp with microdns, in its own thread
- * (mdns_serve blocks). Pattern tested on FW 13.60 with tools/probe.
+ * (mdns_serve blocks). Pattern tested on FW 13.60.
  * SPDX-License-Identifier: GPL-3.0-or-later */
 #include "mdns.h"
 

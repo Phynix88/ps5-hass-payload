@@ -1,4 +1,4 @@
-/* All limits and fixed values in one place (design spec sections 4-8).
+/* All limits and fixed values in one place.
  * SPDX-License-Identifier: GPL-3.0-or-later */
 #ifndef PS5H_LIMITS_H
 #define PS5H_LIMITS_H

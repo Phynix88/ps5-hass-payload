@@ -133,7 +133,7 @@ static void set_nonblock(int fd) {
   fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);
 }
 
-/* SO_REUSEADDR, no SO_REUSEPORT (spec section 8). */
+/* SO_REUSEADDR, no SO_REUSEPORT. */
 static int try_bind(server *s) {
   struct sockaddr_in a;
   socklen_t alen = sizeof(a);

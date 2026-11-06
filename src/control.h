@@ -1,4 +1,4 @@
-/* Launch, close, standby (design spec section 5).
+/* Launch, close, standby.
  * SPDX-License-Identifier: GPL-3.0-or-later */
 #ifndef PS5H_CONTROL_H
 #define PS5H_CONTROL_H

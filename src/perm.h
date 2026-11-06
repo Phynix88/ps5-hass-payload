@@ -1,4 +1,4 @@
-/* Permissions granted from Home Assistant with a code on the TV (design v0.3 §5).
+/* Permissions granted from Home Assistant with a code on the TV.
  * Names as in config.json: power_actions, power_off, fan_control.
  * SPDX-License-Identifier: GPL-3.0-or-later */
 #ifndef PS5H_PERM_H

@@ -1,4 +1,4 @@
-/* Running payloads: process names minus Sony's own (design v0.2 §3.2).
+/* Running payloads: process names minus Sony's own.
  * SPDX-License-Identifier: GPL-3.0-or-later */
 #ifndef PS5H_PROCS_H
 #define PS5H_PROCS_H

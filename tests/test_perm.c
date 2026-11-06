@@ -1,4 +1,4 @@
-/* Permissions granted from Home Assistant (design v0.3 §5).
+/* Permissions granted from Home Assistant.
  * SPDX-License-Identifier: GPL-3.0-or-later */
 #include "t.h"
 

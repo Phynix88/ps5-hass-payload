@@ -3,9 +3,10 @@
  * Core functions are linked directly. Optional ones (randomness, rest mode,
  * fan, system language) are resolved on first use with dlopen/dlsym, so a
  * firmware without them still loads the payload; the matching field is then
- * null and /info.capabilities says so (design spec section 8).
+ * null and /info.capabilities says so.
  *
- * Sources: tools/probe (notification, randomness, language, model, FW),
+ * Checked on FW 13.60 with small probe payloads (notification, randomness,
+ * language, model, FW); other sources:
  * ps5-status (running app, launch/close, temperatures, older instance),
  * ps5-payload-dev/websrv and ftpsrv (launch context, kill).
  *

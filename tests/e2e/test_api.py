@@ -1,5 +1,5 @@
 # End-to-end tests: the host server (fake console) against api/schema.json.
-# Every row of the API table in the design spec (section 5) has a test that
+# Every row of the endpoint table in API.md has a test that
 # checks the HTTP status and validates the JSON against the schema.
 # SPDX-License-Identifier: GPL-3.0-or-later
 import http.client

@@ -1,5 +1,4 @@
-/* Installed apps: union of /user/appmeta/<ID>/ and /user/app/<ID>/sce_sys/
- * (design spec section 7).
+/* Installed apps: union of /user/appmeta/<ID>/ and /user/app/<ID>/sce_sys/.
  * SPDX-License-Identifier: GPL-3.0-or-later */
 #ifndef PS5H_APPS_H
 #define PS5H_APPS_H

@@ -1,4 +1,4 @@
-/* Paths, browser guard, allow list, token check (design spec sections 5, 6).
+/* Paths, browser guard, allow list, token check.
  * SPDX-License-Identifier: GPL-3.0-or-later */
 #ifndef PS5H_ROUTER_H
 #define PS5H_ROUTER_H

@@ -1,4 +1,4 @@
-/* Fan threshold and watcher (design v0.2 §3.4).
+/* Fan threshold and watcher.
  * SPDX-License-Identifier: GPL-3.0-or-later */
 #include "t.h"
 

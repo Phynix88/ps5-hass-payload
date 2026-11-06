@@ -1,4 +1,4 @@
-/* Fields of /state and /info (design spec section 5).
+/* Fields of /state and /info.
  * Both write key/value pairs into an object the caller has opened.
  * SPDX-License-Identifier: GPL-3.0-or-later */
 #ifndef PS5H_STATE_H

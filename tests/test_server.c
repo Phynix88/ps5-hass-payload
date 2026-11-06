@@ -285,7 +285,7 @@ static void test_server_wake_rebinds(void) {
 }
 
 
-/* PS5: the monotonic clock keeps running in rest mode (spec section 15), so
+/* PS5: the monotonic clock keeps running in rest mode, so
  * both clocks jump together. A long gap between two loop passes means the
  * process was suspended. */
 static void test_server_suspend_gap_rebinds(void) {

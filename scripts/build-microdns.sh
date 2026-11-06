@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build libmicrodns for the PS5 exactly as pinned in the design spec:
+# Build libmicrodns for the PS5 exactly as pinned here:
 # commit, pacbrew-repo patches with checksums, static library.
 #   scripts/build-microdns.sh <target dir>      (needs PS5_PAYLOAD_SDK, meson, ninja)
 set -euo pipefail
