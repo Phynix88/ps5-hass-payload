@@ -2,10 +2,12 @@
 
 A payload for jailbroken PS5 consoles that connects the console to your own
 [Home Assistant](https://www.home-assistant.io/). It reports what the console is doing, lists the installed games and
-apps with their names and covers, starts and closes apps and, if you allow it, puts the console into rest mode.
+apps with their names and covers, starts and closes apps, shows messages from Home Assistant on the TV and reports
+which payloads are running. If you allow it, it also puts the console into rest mode, powers it off and sets the
+temperature at which the fan speeds up.
 
-The Home Assistant side is a separate HACS integration (`ps5-hass`, in preparation) that only uses the HTTP API
-described in [API.md](API.md).
+The Home Assistant side is a separate HACS integration, [ps5-hass](https://github.com/Phynix88/ps5-hass), that only
+uses the HTTP API described in [API.md](API.md).
 
 - No MQTT broker, no PSN account, no cloud.
 - Pairing with a code shown on the TV, like a smart TV.
@@ -53,11 +55,18 @@ Everything lives in `/data/ps5-hass/` on the console (reachable via FTP):
 
 | File | Content |
 |---|---|
-| `config.json` | port, pairings, `allow` (address allow list), `hosts` (extra host names), `power_actions` |
+| `config.json` | port, pairings, `allow` (address allow list), `hosts` (extra host names), `power_actions`, `power_off`, `fan_control`, `fan_target_c`, `fan_stock_c` |
 | `device_id` | random id of this console for Home Assistant; survives a reset |
 | `log.txt` | recent log, at most 64 KB together with `log.txt.1` |
 
 - **Allow rest mode from Home Assistant:** set `"power_actions": true` in `config.json` and restart the payload.
+- **Allow power off from Home Assistant:** set `"power_off": true` and restart the payload. Switching the console on
+  again needs the power button (or the controller's PS button).
+- **Allow the fan threshold from Home Assistant:** set `"fan_control": true` and restart the payload. The payload
+  remembers the console's factory value in `fan_stock_c` (91 °C on FW 13.60) and never sets a higher one; allowed
+  range 45–85 °C. `fan_target_c` is the threshold Home Assistant asked for (`0` = factory value). If the console
+  resets the value, the payload sets it again; if another tool changes it, the payload stops and reports it in
+  `last_error`. To learn the factory value again, remove `fan_stock_c` while no threshold is set.
 - **Reset all pairings:** delete `config.json` and restart the payload.
 - **Only allow certain addresses:** `"allow": ["192.168.1.0/24"]`. An invalid entry blocks everything, on purpose.
 - A broken `config.json` is set aside as `config.json.broken-<time>`; the TV shows a notice and you pair again.
@@ -75,7 +84,10 @@ Know these before you use it:
 - Not reachable in rest mode. Waking the console from rest mode is not supported (it needs Remote Play pairing with
   a PSN login). Home Assistant detects rest mode with Sony's own status query.
 - PS4 titles (`CUSA…`) are listed with their title id as name; untested.
-- No controller input, no screenshots, no power off (only rest mode).
+- No controller input, no screenshots, no controller battery (the console refuses pad access from a payload).
+- Messages on the TV: at most 200 bytes, 5 per 30 seconds.
+- Fan threshold: tested on FW 13.60 (CFI-2116). Other firmware versions may use other values; if reading the fan
+  fails, `capabilities.fan_control` is `false`.
 
 ## Problems
 
