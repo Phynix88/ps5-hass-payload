@@ -1,0 +1,6 @@
+*.elf
+build/
+third_party/microdns/
+__pycache__/
+.venv/
+.superpowers/

@@ -1,0 +1,42 @@
+/* Fake console for tests: every field can be set directly by a test.
+ * SPDX-License-Identifier: GPL-3.0-or-later */
+#ifndef PS5H_PLATFORM_FAKE_H
+#define PS5H_PLATFORM_FAKE_H
+
+#include "platform.h"
+
+struct fake_state {
+  int64_t wall_s, mono_ms, uptime_s;
+  int random_rc;
+  uint64_t random_counter;
+  int notify_rc;
+  char last_notify[256];
+  int notify_count;
+  plat_running running; /* app_id 0 = nothing runs */
+  int next_app_id;
+  int launch_rc; /* < 0: launch fails with this code */
+  int kill_rc;
+  int user_rc;
+  uint32_t user_id;
+  int standby_rc;
+  int standby_calls;
+  plat_opt_int cpu, soc, fan;
+  int language;
+  int storage_rc;
+  int64_t free_mb, total_mb;
+  char model[64];
+  char firmware[16];
+  uint32_t ipv4[4];
+  int n_ipv4;
+  char root[512];
+  plat_caps caps;
+};
+
+extern struct fake_state fake;
+
+/* Defaults: idle console, user logged in, all sensors present, root "". */
+void fake_reset(void);
+/* PS5HASS_ROOT, PS5HASS_FAKE_NO_USER (for the host server). */
+void fake_init_from_env(void);
+
+#endif

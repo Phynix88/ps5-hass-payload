@@ -1,0 +1,34 @@
+# Host build: unit tests, fuzzing, the host server for end-to-end tests.
+# Runs on Linux (CI, buildhost) and macOS. Never talks to a PS5.
+#
+#   make -f Makefile.host test           unit tests with ASan/UBSan
+#   make -f Makefile.host fuzz FUZZ_SECONDS=60   libFuzzer targets (Linux clang)
+#   make -f Makefile.host host           build/ps5-hass-host (fake platform)
+#   make -f Makefile.host e2e            end-to-end tests against the host server
+
+CC ?= cc
+PYTHON ?= python3
+FUZZ_SECONDS ?= 60
+
+SAN    := -fsanitize=address,undefined -fno-omit-frame-pointer
+CFLAGS_HOST := -std=c11 -Wall -Wextra -Werror -g $(SAN) \
+               -D_DEFAULT_SOURCE -D_DARWIN_C_SOURCE \
+               -Isrc -Ithird_party/jsmn \
+               -DPS5H_VERSION=\"host\" -DPS5H_COMMIT=\"host\"
+LDLIBS_HOST := -lpthread
+
+HEADERS := $(wildcard src/*.h) tests/t.h
+SRC_LIB := $(filter-out src/platform_ps5.c src/mdns.c src/main.c,$(wildcard src/*.c))
+TESTS   := $(patsubst tests/%.c,build/tests/%,$(wildcard tests/test_*.c))
+
+.PHONY: test fuzz host e2e clean
+
+test: $(TESTS)
+	@set -e; for t in $(TESTS); do $$t; done
+
+build/tests/%: tests/%.c $(SRC_LIB) $(HEADERS)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS_HOST) -o $@ $< $(SRC_LIB) $(LDLIBS_HOST)
+
+clean:
+	rm -rf build

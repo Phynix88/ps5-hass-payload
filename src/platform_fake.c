@@ -1,0 +1,168 @@
+/* Fake console for unit tests and the host server.
+ * SPDX-License-Identifier: GPL-3.0-or-later */
+#include "platform_fake.h"
+
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+struct fake_state fake;
+
+void fake_reset(void) {
+  memset(&fake, 0, sizeof(fake));
+  fake.wall_s = 1790000000;
+  fake.mono_ms = 1000;
+  fake.uptime_s = 100;
+  fake.next_app_id = 100;
+  fake.user_id = 0x10000001;
+  fake.cpu = (plat_opt_int){true, 41};
+  fake.soc = (plat_opt_int){true, 38};
+  fake.fan = (plat_opt_int){true, 131};
+  fake.language = 1;
+  fake.free_mb = 1000;
+  fake.total_mb = 2000;
+  snprintf(fake.model, sizeof(fake.model), "CFI-TEST");
+  snprintf(fake.firmware, sizeof(fake.firmware), "13.60");
+  fake.ipv4[0] = 0x0100007f + 0x01000000; /* any non-loopback value */
+  fake.n_ipv4 = 1;
+  fake.caps = (plat_caps){true, true, true, true, true, true};
+}
+
+void fake_init_from_env(void) {
+  const char *root = getenv("PS5HASS_ROOT");
+  fake_reset();
+  if (root) {
+    snprintf(fake.root, sizeof(fake.root), "%s", root);
+  }
+  if (getenv("PS5HASS_FAKE_NO_USER")) {
+    fake.user_rc = -1;
+    fake.user_id = 0;
+  }
+}
+
+int plat_init(void) { return 0; }
+int64_t plat_wall_s(void) { return fake.wall_s; }
+int64_t plat_mono_ms(void) { return fake.mono_ms; }
+int64_t plat_uptime_s(void) { return fake.uptime_s; }
+const char *plat_root(void) { return fake.root; }
+
+/* splitmix64: deterministic, so tests can predict pairing codes. */
+static uint64_t next_random(void) {
+  uint64_t z = (fake.random_counter += 0x9e3779b97f4a7c15ULL);
+  z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ULL;
+  z = (z ^ (z >> 27)) * 0x94d049bb133111ebULL;
+  return z ^ (z >> 31);
+}
+
+int plat_random(uint8_t *buf, size_t n) {
+  if (fake.random_rc < 0) {
+    return fake.random_rc;
+  }
+  for (size_t i = 0; i < n; i += 8) {
+    uint64_t v = next_random();
+    size_t k = n - i < 8 ? n - i : 8;
+    memcpy(buf + i, &v, k);
+  }
+  return 0;
+}
+
+int plat_notify(const char *ascii) {
+  if (fake.notify_rc < 0) {
+    return fake.notify_rc;
+  }
+  snprintf(fake.last_notify, sizeof(fake.last_notify), "%s", ascii);
+  fake.notify_count++;
+  if (fake.root[0]) {
+    char path[600];
+    int fd;
+    snprintf(path, sizeof(path), "%s/fake-notify.txt", fake.root);
+    fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    if (fd >= 0) {
+      ssize_t w = write(fd, ascii, strlen(ascii));
+      (void)w;
+      close(fd);
+    }
+  }
+  return 0;
+}
+
+int plat_running_app(plat_running *out) {
+  if (fake.running.app_id <= 0) {
+    return 0;
+  }
+  *out = fake.running;
+  return 1;
+}
+
+static bool installed(const char *title_id) {
+  char path[700];
+  struct stat st;
+  snprintf(path, sizeof(path), "%s/user/app/%s", fake.root, title_id);
+  if (!stat(path, &st)) {
+    return true;
+  }
+  snprintf(path, sizeof(path), "%s/user/appmeta/%s", fake.root, title_id);
+  return !stat(path, &st);
+}
+
+int plat_launch(const char *title_id) {
+  if (fake.launch_rc < 0) {
+    return fake.launch_rc;
+  }
+  if (!installed(title_id)) {
+    return -1;
+  }
+  fake.running.app_id = fake.next_app_id++;
+  snprintf(fake.running.title_id, sizeof(fake.running.title_id), "%s",
+           title_id);
+  return fake.running.app_id;
+}
+
+int plat_kill_app(int app_id) {
+  if (fake.kill_rc < 0) {
+    return fake.kill_rc;
+  }
+  if (fake.running.app_id == app_id) {
+    memset(&fake.running, 0, sizeof(fake.running));
+  }
+  return 0;
+}
+
+int plat_foreground_user(uint32_t *user) {
+  *user = fake.user_id;
+  return fake.user_rc;
+}
+
+int plat_standby(void) {
+  fake.standby_calls++;
+  return fake.standby_rc;
+}
+
+plat_opt_int plat_cpu_temp(void) { return fake.cpu; }
+plat_opt_int plat_soc_temp(void) { return fake.soc; }
+plat_opt_int plat_fan_raw(void) { return fake.fan; }
+int plat_language(void) { return fake.language; }
+
+int plat_storage_mb(const char *path, int64_t *free_mb, int64_t *total_mb) {
+  (void)path;
+  if (fake.storage_rc < 0) {
+    return fake.storage_rc;
+  }
+  *free_mb = fake.free_mb;
+  *total_mb = fake.total_mb;
+  return 0;
+}
+
+void plat_model(char out[64]) { snprintf(out, 64, "%s", fake.model); }
+void plat_firmware(char out[16]) { snprintf(out, 16, "%s", fake.firmware); }
+
+int plat_ipv4_list(uint32_t *addrs, int max) {
+  int n = fake.n_ipv4 < max ? fake.n_ipv4 : max;
+  memcpy(addrs, fake.ipv4, (size_t)n * sizeof(*addrs));
+  return n;
+}
+
+plat_caps plat_capabilities(void) { return fake.caps; }
