@@ -68,7 +68,7 @@ static void test_available_follows_caps(void) {
 static void test_apply_grant_saves(void) {
   config d;
   setup();
-  T_EQ_INT(perm_apply(&cfg, PERM_POWER_OFF, 0), 0);
+  T_EQ_INT(perm_apply(&cfg, PERM_POWER_OFF, 0, "test"), 0);
   T_ASSERT(cfg.power_off);
   T_EQ_INT(perm_allowed(&cfg), PERM_POWER_OFF);
   config_load(&d);
@@ -79,14 +79,14 @@ static void test_apply_grant_saves(void) {
 static void test_apply_save_fails_rolls_back(void) {
   setup();
   T_EQ_INT(chmod(dir, 0500), 0);
-  T_EQ_INT(perm_apply(&cfg, PERM_POWER_OFF | PERM_POWER_ACTIONS, 0), -1);
+  T_EQ_INT(perm_apply(&cfg, PERM_POWER_OFF | PERM_POWER_ACTIONS, 0, "test"), -1);
   T_EQ_INT(chmod(dir, 0700), 0);
   T_ASSERT(!cfg.power_off && !cfg.power_actions);
 }
 
 static void fan_on_at(int target) {
   int rc;
-  T_EQ_INT(perm_apply(&cfg, PERM_FAN_CONTROL, 0), 0);
+  T_EQ_INT(perm_apply(&cfg, PERM_FAN_CONTROL, 0, "test"), 0);
   T_EQ_INT(fan_set(&cfg, target, &rc), FAN_OK);
   T_EQ_INT(fake.fan_value, target);
 }
@@ -95,7 +95,7 @@ static void test_apply_revoke_fan_resets_after_save(void) {
   config d;
   setup();
   fan_on_at(70);
-  T_EQ_INT(perm_apply(&cfg, 0, PERM_FAN_CONTROL), 0);
+  T_EQ_INT(perm_apply(&cfg, 0, PERM_FAN_CONTROL, "test"), 0);
   T_EQ_INT(fake.fan_value, 91);
   T_ASSERT(!cfg.fan_control);
   T_EQ_INT(cfg.fan_target_c, 0);
@@ -110,7 +110,7 @@ static void test_apply_revoke_fan_save_fails_fan_untouched(void) {
   fan_on_at(70);
   calls = fake.fan_set_calls;
   T_EQ_INT(chmod(dir, 0500), 0);
-  T_EQ_INT(perm_apply(&cfg, 0, PERM_FAN_CONTROL), -1);
+  T_EQ_INT(perm_apply(&cfg, 0, PERM_FAN_CONTROL, "test"), -1);
   T_EQ_INT(chmod(dir, 0700), 0);
   T_EQ_INT(fake.fan_value, 70);
   T_EQ_INT(fake.fan_set_calls, calls);
@@ -122,7 +122,7 @@ static void test_apply_revoke_fan_write_fails_still_revoked(void) {
   setup();
   fan_on_at(70);
   fake.fan_set_rc = -1;
-  T_EQ_INT(perm_apply(&cfg, 0, PERM_FAN_CONTROL), 0);
+  T_EQ_INT(perm_apply(&cfg, 0, PERM_FAN_CONTROL, "test"), 0);
   T_ASSERT(!cfg.fan_control);
   T_ASSERT(strstr(log_last_error(), "stays until the console resets it"));
 }
@@ -131,7 +131,7 @@ static void test_apply_revoke_not_granted_no_fan_write(void) {
   int calls;
   setup();
   calls = fake.fan_set_calls;
-  T_EQ_INT(perm_apply(&cfg, 0, PERM_ALL), 0);
+  T_EQ_INT(perm_apply(&cfg, 0, PERM_ALL, "test"), 0);
   T_EQ_INT(fake.fan_set_calls, calls);
 }
 
@@ -165,10 +165,10 @@ static void test_json_shape(void) {
 static void test_revoke_fan_without_target_does_not_write(void) {
   int calls;
   setup();
-  T_EQ_INT(perm_apply(&cfg, PERM_FAN_CONTROL, 0), 0);
+  T_EQ_INT(perm_apply(&cfg, PERM_FAN_CONTROL, 0, "test"), 0);
   calls = fake.fan_set_calls;
   fake.fan_value = 60; /* another tool set it; we never set a threshold */
-  T_EQ_INT(perm_apply(&cfg, 0, PERM_FAN_CONTROL), 0);
+  T_EQ_INT(perm_apply(&cfg, 0, PERM_FAN_CONTROL, "test"), 0);
   T_EQ_INT(fake.fan_set_calls, calls);
   T_EQ_INT(fake.fan_value, 60);
 }
@@ -181,9 +181,19 @@ static void test_revoke_fan_after_watcher_gave_up_does_not_write(void) {
   fake.mono_ms += (PS5H_FAN_CHECK_S + 1) * 1000;
   fan_tick(&cfg, fake.mono_ms);
   calls = fake.fan_set_calls;
-  T_EQ_INT(perm_apply(&cfg, 0, PERM_FAN_CONTROL), 0);
+  T_EQ_INT(perm_apply(&cfg, 0, PERM_FAN_CONTROL, "test"), 0);
   T_EQ_INT(fake.fan_set_calls, calls);
   T_EQ_INT(fake.fan_value, 60);
+}
+
+static void test_apply_logs_label(void) {
+  char path[800];
+  setup();
+  T_EQ_INT(perm_apply(&cfg, PERM_POWER_OFF, 0, "Home Assistant"), 0);
+  T_EQ_INT(perm_apply(&cfg, 0, PERM_POWER_OFF, "Home Assistant"), 0);
+  snprintf(path, sizeof(path), "%s/log.txt", dir);
+  T_ASSERT(strstr(t_read(path), "permissions: granted power off (by \"Home Assistant\")"));
+  T_ASSERT(strstr(t_read(path), "permissions: revoked power off (by \"Home Assistant\")"));
 }
 
 int main(void) {
@@ -198,6 +208,7 @@ int main(void) {
   T_RUN(test_apply_revoke_not_granted_no_fan_write);
   T_RUN(test_text_order);
   T_RUN(test_json_shape);
+  T_RUN(test_apply_logs_label);
   T_RUN(test_revoke_fan_without_target_does_not_write);
   T_RUN(test_revoke_fan_after_watcher_gave_up_does_not_write);
   T_MAIN();

@@ -304,7 +304,8 @@ auth_rc auth_revoke(int slot) {
 
 /* --- grants (v0.3) ------------------------------------------------------ */
 
-/* Copies at most `max` bytes of `in`, never cutting a UTF-8 character. */
+/* Copies at most `max` bytes of `in`, never cutting a UTF-8 character;
+ * control characters become spaces (the label is shown on the TV). */
 static void utf8_prefix(const char *in, size_t max, char *out) {
   size_t n = strlen(in);
   if (n > max) {
@@ -313,7 +314,10 @@ static void utf8_prefix(const char *in, size_t max, char *out) {
       n--;
     }
   }
-  memcpy(out, in, n);
+  for (size_t i = 0; i < n; i++) {
+    unsigned char ch = (unsigned char)in[i];
+    out[i] = ch < 0x20 || ch == 0x7f ? ' ' : (char)ch;
+  }
   out[n] = '\0';
 }
 

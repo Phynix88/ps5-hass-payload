@@ -84,7 +84,7 @@ static void set_bits(config *c, unsigned bits) {
   c->fan_control = bits & PERM_FAN_CONTROL;
 }
 
-int perm_apply(config *c, unsigned grant, unsigned revoke) {
+int perm_apply(config *c, unsigned grant, unsigned revoke, const char *who) {
   unsigned before = perm_allowed(c), after = (before | grant) & ~revoke;
   int target_before = c->fan_target_c;
   bool fan_off = (before & PERM_FAN_CONTROL) && !(after & PERM_FAN_CONTROL);
@@ -101,11 +101,11 @@ int perm_apply(config *c, unsigned grant, unsigned revoke) {
   }
   if (after & ~before) {
     perm_text(after & ~before, text, sizeof(text));
-    log_msg("permissions: granted %s", text);
+    log_msg("permissions: granted %s (by \"%s\")", text, who ? who : "?");
   }
   if (before & ~after) {
     perm_text(before & ~after, text, sizeof(text));
-    log_msg("permissions: revoked %s", text);
+    log_msg("permissions: revoked %s (by \"%s\")", text, who ? who : "?");
   }
   if (fan_off && target_before) {
     fan_release(c); /* only if we had set a threshold */

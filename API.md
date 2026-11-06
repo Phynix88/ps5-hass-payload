@@ -139,7 +139,8 @@ Rules:
 - Taking `fan_control` away first saves `config.json`, then writes the console's factory threshold back. If that
   write fails or the factory value is unknown, the permission is gone anyway and `last_error` says the threshold
   stays until the console resets it.
-- If `config.json` cannot be saved, nothing changes and the answer is `500 internal`.
+- If `config.json` cannot be saved, the permissions stay as they were and the answer is `500 internal`; a grant code
+  is used up anyway, ask for a new one.
 
 ### `/apps`
 

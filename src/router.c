@@ -523,6 +523,7 @@ static void h_standby(route_ctx *ctx, route_resp *out) {
     return;
   case CTL_DISABLED:
     fail(out, 403, "power_actions_disabled",
+         "allow rest mode in Home Assistant (options, Console permissions) or "
          "set power_actions to true in config.json");
     return;
   case CTL_RATE_LIMITED:
@@ -548,7 +549,9 @@ static void h_fan(route_ctx *ctx, const jr_t *r, route_resp *out) {
     done(out);
     return;
   case FAN_DISABLED:
-    fail(out, 403, "fan_control_disabled", "set fan_control to true in config.json");
+    fail(out, 403, "fan_control_disabled",
+         "allow fan control in Home Assistant (options, Console permissions) or "
+         "set fan_control to true in config.json");
     return;
   case FAN_BAD_VALUE:
     fail(out, 400, "bad_request", "threshold_c must be 45..85 or 0");
@@ -569,7 +572,9 @@ static void h_power_off(route_ctx *ctx, route_resp *out) {
     done(out);
     return;
   case CTL_DISABLED:
-    fail(out, 403, "power_off_disabled", "set power_off to true in config.json");
+    fail(out, 403, "power_off_disabled",
+         "allow power off in Home Assistant (options, Console permissions) or "
+         "set power_off to true in config.json");
     return;
   case CTL_RATE_LIMITED:
     fail_retry(out, 429, "rate_limited", "at most one power request per 10 s", rc);
@@ -665,7 +670,7 @@ static void h_grant_finish(route_ctx *ctx, const jr_t *r, int slot,
   }
   switch (auth_grant_finish(slot, code, &perms, &left, &retry)) {
   case AUTH_OK:
-    if (perm_apply(ctx->cfg, perms, 0)) {
+    if (perm_apply(ctx->cfg, perms, 0, ctx->cfg->tokens[slot].label)) {
       fail(out, 500, "internal", "could not save config.json");
       return;
     }
@@ -691,14 +696,15 @@ static void h_grant_finish(route_ctx *ctx, const jr_t *r, int slot,
   }
 }
 
-static void h_grant_revoke(route_ctx *ctx, const jr_t *r, route_resp *out) {
+static void h_grant_revoke(route_ctx *ctx, const jr_t *r, int slot,
+                           route_resp *out) {
   unsigned perms;
   if (perm_parse(r, jr_get(r, 0, "permissions"), &perms)) {
     fail(out, 400, "bad_request",
          "permissions: list of power_actions, power_off, fan_control");
     return;
   }
-  if (perm_apply(ctx->cfg, 0, perms)) {
+  if (perm_apply(ctx->cfg, 0, perms, ctx->cfg->tokens[slot].label)) {
     fail(out, 500, "internal", "could not save config.json");
     return;
   }
@@ -784,7 +790,7 @@ void route(route_ctx *ctx, const http_req *req, uint32_t peer,
   case R_FAN: h_fan(ctx, &body, out); break;
   case R_GRANT_START: h_grant_start(ctx, &body, slot, out); break;
   case R_GRANT_FINISH: h_grant_finish(ctx, &body, slot, out); break;
-  case R_GRANT_REVOKE: h_grant_revoke(ctx, &body, out); break;
+  case R_GRANT_REVOKE: h_grant_revoke(ctx, &body, slot, out); break;
   default: fail(out, 404, "not_found", "unknown path");
   }
 }

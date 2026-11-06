@@ -500,6 +500,60 @@ static void test_grant_bad_input(void) {
   T_EQ_INT(gfinish(0, "12a456", &perms, &left), AUTH_BAD_INPUT);
 }
 
+/* Label part of the grant text: between `ps5-hass: "` and `" asks to allow`. */
+static int label_bytes(void) {
+  const char *end = strstr(fake.last_notify, "\" asks to allow ");
+  return end ? (int)(end - (fake.last_notify + 11)) : -1;
+}
+
+static void test_grant_text_label_3byte_emoji_quotes(void) {
+  char label[200] = "He said \"hi\" ", clean[300];
+  setup();
+  for (int i = 0; i < 20; i++) {
+    strcat(label, "\xe2\x82\xac"); /* euro sign, 3 bytes */
+  }
+  strcat(label, "\xf0\x9f\x98\x80"); /* emoji, 4 bytes */
+  pair_as(CLIENT, label);
+  T_EQ_INT(gstart(0, PERM_POWER_OFF, "power off"), AUTH_OK);
+  T_EQ_INT(utf8_sanitize(fake.last_notify, strlen(fake.last_notify), clean,
+                         sizeof(clean)),
+           strlen(fake.last_notify));
+  T_ASSERT(label_bytes() > 0 && label_bytes() <= PS5H_GRANT_LABEL_MAX_BYTES);
+  T_ASSERT(strstr(fake.last_notify, "He said \"hi\" \xe2\x82\xac"));
+  for (int i = 0; i < 6; i++) {
+    T_ASSERT(shown_code()[i] >= '0' && shown_code()[i] <= '9');
+  }
+}
+
+static void test_grant_text_strips_control_characters(void) {
+  setup();
+  pair_as(CLIENT, "Home\nAssistant\t1\x7f");
+  T_EQ_INT(gstart(0, PERM_POWER_OFF, "power off"), AUTH_OK);
+  T_ASSERT(!strchr(fake.last_notify, '\n'));
+  T_ASSERT(!strchr(fake.last_notify, '\t'));
+  T_ASSERT(!strchr(fake.last_notify, '\x7f'));
+  T_ASSERT(strstr(fake.last_notify, "\"Home Assistant 1"));
+}
+
+static void test_both_codes_open_never_cross(void) {
+  unsigned perms;
+  int left, retry;
+  char tok[65], pair_code[7], grant_code[7];
+  setup();
+  pair_as(CLIENT, "Home Assistant");
+  T_EQ_INT(gstart(0, PERM_POWER_OFF, "power off"), AUTH_OK);
+  snprintf(grant_code, sizeof(grant_code), "%s", shown_code());
+  start(); /* pairing code, the grant code stays open */
+  snprintf(pair_code, sizeof(pair_code), "%s", shown_code());
+  if (strcmp(pair_code, grant_code)) {
+    T_EQ_INT(gfinish(0, pair_code, &perms, &left), AUTH_WRONG_CODE);
+    T_EQ_INT(finish(grant_code, CLIENT2, tok, &left, &retry), AUTH_WRONG_CODE);
+  }
+  T_EQ_INT(gfinish(0, grant_code, &perms, &left), AUTH_OK);
+  T_EQ_INT(perms, PERM_POWER_OFF);
+  T_EQ_INT(finish(pair_code, CLIENT2, tok, &left, &retry), AUTH_OK);
+}
+
 int main(void) {
   T_RUN(test_pair_start_shows_code_on_tv);
   T_RUN(test_pair_start_notify_failed_holds_no_code);
@@ -529,5 +583,8 @@ int main(void) {
   T_RUN(test_grant_finish_after_token_revoked);
   T_RUN(test_grant_text_long_label_keeps_code);
   T_RUN(test_grant_bad_input);
+  T_RUN(test_grant_text_label_3byte_emoji_quotes);
+  T_RUN(test_grant_text_strips_control_characters);
+  T_RUN(test_both_codes_open_never_cross);
   T_MAIN();
 }

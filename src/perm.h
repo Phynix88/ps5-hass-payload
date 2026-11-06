@@ -20,8 +20,9 @@ unsigned perm_allowed(const config *c);
 void perm_text(unsigned perms, char *out, size_t cap);
 /* Sets `grant` bits, clears `revoke` bits and saves config.json. Save fails:
  * config restored, -1, fan untouched. After a successful save that took
- * fan_control away: the fan goes back to the factory value (fan_release). */
-int perm_apply(config *c, unsigned grant, unsigned revoke);
+ * fan_control away: the fan goes back to the factory value (fan_release).
+ * `who`: label of the client, for the log. */
+int perm_apply(config *c, unsigned grant, unsigned revoke, const char *who);
 /* "permissions":{"power_actions":{"allowed":b,"available":b},...} into an
  * open object. */
 void perm_json(jw_t *w, const config *c);

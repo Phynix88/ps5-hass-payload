@@ -444,6 +444,7 @@ static void test_power_off_codes(void) {
   pair();
   T_EQ_INT(call("POST", "/api/v1/power/off", "{}"), 403);
   T_ASSERT(strstr(body, "\"error\":\"power_off_disabled\""));
+  T_ASSERT(strstr(body, "Console permissions"));
   cfg.power_off = true;
   T_EQ_INT(call("POST", "/api/v1/power/off", "{}"), 200);
   T_EQ_INT(fake.power_off_calls, 1);
