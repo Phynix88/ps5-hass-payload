@@ -1,0 +1,55 @@
+# One job to keep the account-wide minutes low while the repo is private:
+# host tests on every push; PS5 build and release only for tags v*.
+name: ci
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # release + payloads.json on tags only
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # git describe for the version
+      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - name: Unit and end-to-end tests
+        run: nix-shell --run 'make -f Makefile.host test e2e && python -m pytest -q tests/test_make_payloads_json.py'
+
+      - name: Build payload
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          nix-shell --run 'scripts/build-microdns.sh build/microdns && make'
+          sha256sum ps5-hass.elf > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" ps5-hass.elf SHA256SUMS \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file <(awk -v t="## $GITHUB_REF_NAME" '$0==t{f=1;next} /^## /{f=0} f' CHANGELOG.md)
+
+      - name: Update payloads.json on main
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          cp ps5-hass.elf /tmp/ps5-hass.elf
+          git fetch origin main && git checkout main
+          python3 scripts/make-payloads-json.py --version "$GITHUB_REF_NAME" \
+            --elf /tmp/ps5-hass.elf --repo "$GITHUB_REPOSITORY" > payloads.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add payloads.json
+          git commit -m "release: payloads.json for $GITHUB_REF_NAME"
+          git push origin main
