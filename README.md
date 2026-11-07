@@ -120,8 +120,9 @@ Know these before you use it:
   (for example the ELF loader). ps5-hass does not add a way in for web pages: browser requests are refused (see
   [API.md](API.md#browser-guard)), pairing needs the code from the TV, and wrong codes lock pairing for a growing
   time.
-- Not reachable in rest mode. Waking the console from rest mode is not supported (it needs Remote Play pairing with
-  a PSN login). Home Assistant detects rest mode with Sony's own status query.
+- Not reachable in rest mode, and it cannot wake the console. Home Assistant detects rest mode with Sony's own status
+  query. For waking from rest mode, the [PlayStation 5 integration](https://github.com/SH1FT-W/playstation-5) (Remote
+  Play pairing) can run alongside ps5-hass.
 - PS4 titles (`CUSA…`) are listed with their title id as name; untested.
 - No controller input, no screenshots, no controller battery (the console refuses pad access from a payload).
 - Messages on the TV: at most 200 bytes, 5 per 30 seconds.
