@@ -95,6 +95,21 @@
             },
             "fan_control": {
               "type": "boolean"
+            },
+            "focus": {
+              "type": "boolean"
+            },
+            "power_state": {
+              "type": "boolean"
+            },
+            "suspend": {
+              "type": "boolean"
+            },
+            "keep_awake": {
+              "type": "boolean"
+            },
+            "soc_power": {
+              "type": "boolean"
             }
           },
           "required": [
@@ -106,7 +121,12 @@
             "standby",
             "mdns",
             "power_off",
-            "fan_control"
+            "fan_control",
+            "focus",
+            "power_state",
+            "suspend",
+            "keep_awake",
+            "soc_power"
           ],
           "additionalProperties": false
         },

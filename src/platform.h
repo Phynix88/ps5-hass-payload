@@ -24,7 +24,17 @@ typedef struct {
 
 typedef struct {
   bool notify, random, standby, fan, temps, language, power_off, fan_control;
+  bool focus, power_state, suspend, keep_awake, soc_power;
 } plat_caps;
+
+/* SoC power rails in mW, mV, mA (mw = mv * ma / 1000). Only rails with data
+ * are non-zero. */
+typedef struct {
+  bool ok;
+  int mw[8];
+  int mv[8];
+  int ma[8];
+} plat_soc_power;
 
 /* Process names are at most 19 characters (FreeBSD COMMLEN). */
 typedef char plat_name[20];
@@ -72,5 +82,24 @@ int plat_power_off(void);
 /* Fan threshold of the system driver in C (read/set). */
 int plat_fan_get(int *target_c);
 int plat_fan_set(int target_c);
+
+/* Calls added in v0.4. All optional: a missing console function gives a
+ * negative return value and the matching plat_caps flag is false. Apart from
+ * plat_power_state(), none of them may be called while the console is not
+ * "on" (power state 1000). */
+
+/* 1000 on, 500 rest mode, 300 going to rest, 100 shutting down, < 0 error. */
+int plat_power_state(void);
+/* App id that has the focus (ShellUI id when no game is in front); 0 = ok. */
+int plat_focused_app(int *app_id);
+/* Minimise the app (it stays open, paused). The first call initialises the
+ * launch utility, never earlier. 0 = ok. */
+int plat_suspend_app(int app_id);
+/* Reset the auto power-down timer and tick; 0 = ok. */
+int plat_keep_awake(void);
+/* 0 = ok and out->ok; otherwise out->ok is false. */
+int plat_soc_power_read(plat_soc_power *out);
+/* Title id ("PPSAnnnnn", 9 characters + NUL) of an app id; 0 = ok. */
+int plat_title_of(int app_id, char title_id[10]);
 
 #endif

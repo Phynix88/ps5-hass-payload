@@ -117,7 +117,9 @@ static void test_info_fields_and_capabilities(void) {
   T_ASSERT(strstr(s, "\"capabilities\":{\"temps\":true,\"fan\":true,"
                      "\"notify\":true,\"random\":false,\"launch\":true,"
                      "\"standby\":false,\"mdns\":true,\"power_off\":true,"
-                     "\"fan_control\":true}"));
+                     "\"fan_control\":true,\"focus\":true,"
+                     "\"power_state\":true,\"suspend\":true,"
+                     "\"keep_awake\":true,\"soc_power\":true}"));
   T_ASSERT(strstr(s, "\"last_error\":"));
 }
 
@@ -150,13 +152,13 @@ static void test_info_power_and_fan_follow_capabilities(void) {
   setup();
   T_ASSERT((s = render_info(&r))); /* fresh config: nothing to allow */
   T_ASSERT(strstr(s, "\"power_actions\":true,"));
-  T_ASSERT(strstr(s, "\"power_off\":true,\"fan_control\":true}"));
+  T_ASSERT(strstr(s, "\"power_off\":true,\"fan_control\":true,"));
   fake.caps.power_off = false;
   fake.caps.fan_control = false;
   fake.caps.standby = false;
   T_ASSERT((s = render_info(&r)));
   T_ASSERT(strstr(s, "\"power_actions\":false,"));
-  T_ASSERT(strstr(s, "\"power_off\":false,\"fan_control\":false}"));
+  T_ASSERT(strstr(s, "\"power_off\":false,\"fan_control\":false,"));
 }
 
 static void test_info_has_permissions(void) {

@@ -56,7 +56,7 @@ There are no CORS headers.
 
 | Method and path | Token | Answer |
 |---|---|---|
-| `GET /info` | no | `name`, `version`, `commit`, `api` (1), `device_id`, `model`, `firmware`, `paired`, `power_actions` (`true` when the console can enter rest mode), `config` (`ok`/`recovered`), `capabilities{temps,fan,notify,random,launch,standby,mdns,power_off,fan_control}`, `permissions{power_actions,power_off,fan_control}` (each `{allowed,available}`; kept for v0.3 clients, `allowed` always equals `available`), `last_error` |
+| `GET /info` | no | `name`, `version`, `commit`, `api` (1), `device_id`, `model`, `firmware`, `paired`, `power_actions` (`true` when the console can enter rest mode), `config` (`ok`/`recovered`), `capabilities{temps,fan,notify,random,launch,standby,mdns,power_off,fan_control,focus,power_state,suspend,keep_awake,soc_power}`, `permissions{power_actions,power_off,fan_control}` (each `{allowed,available}`; kept for v0.3 clients, `allowed` always equals `available`), `last_error` |
 | `POST /pair/start` | no | `{"expires_in":120}` |
 | `POST /pair/finish` | no | `{"token":"<64 hex>"}` |
 | `POST /pair/revoke` | yes | `{}` |

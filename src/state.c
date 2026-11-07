@@ -134,6 +134,16 @@ void info_json(jw_t *w, const config *c, const char *device_id,
   jw_bool(w, caps.power_off);
   jw_key(w, "fan_control");
   jw_bool(w, caps.fan_control);
+  jw_key(w, "focus");
+  jw_bool(w, caps.focus);
+  jw_key(w, "power_state");
+  jw_bool(w, caps.power_state);
+  jw_key(w, "suspend");
+  jw_bool(w, caps.suspend);
+  jw_key(w, "keep_awake");
+  jw_bool(w, caps.keep_awake);
+  jw_key(w, "soc_power");
+  jw_bool(w, caps.soc_power);
   jw_end_obj(w);
   perm_json(w);
   jw_key(w, "last_error");

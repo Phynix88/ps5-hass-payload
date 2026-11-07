@@ -38,6 +38,27 @@ struct fake_state {
   int fan_get_rc;
   int fan_set_rc;
   int fan_set_calls;
+  /* v0.4: every call below except plat_power_state() also adds to sony_calls
+   * (what a test checks to prove the console is left alone). A capability
+   * that is false makes the call fail without counting. */
+  int sony_calls;
+  int power_state; /* 1000 on */
+  int power_state_rc;
+  int power_state_calls;
+  int focused_app_id;
+  int focused_app_rc;
+  int focused_app_calls;
+  int suspend_rc;
+  int suspend_calls;
+  int suspended_app_id; /* last app id passed to plat_suspend_app */
+  int keep_awake_rc;
+  int keep_awake_calls;
+  plat_soc_power soc_power;
+  int soc_power_rc;
+  int soc_power_calls;
+  char title_id[10]; /* "" = the running app's title id, if the id matches */
+  int title_of_rc;
+  int title_of_calls;
 };
 
 extern struct fake_state fake;

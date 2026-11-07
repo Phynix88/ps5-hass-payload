@@ -86,6 +86,19 @@ static int (*opt_param_int)(int, int *);
 static int (*opt_fan)(void *, void *);
 static int (*opt_turnoff)(void);
 static bool temps_ok, fan_device_ok;
+/* v0.4. Signatures and libraries as measured with probe3 on FW 13.60. */
+static int (*opt_state)(void);
+static int (*opt_focus)(void *, void *);
+static int (*opt_lnc_init)(void);
+static int (*opt_suspend)(int, int);
+static int (*opt_reset_timer)(void);
+static int (*opt_power_tick)(void);
+static int (*opt_soc_power)(void *);
+static int (*opt_app_title)(int, void *);
+
+/* Console functions take buffers of unknown size; give them this much,
+ * zeroed and 16-byte aligned, and read only the bytes that are meant. */
+#define SONY_BUF 4096
 
 /* Fan threshold of the system driver. Layout and ioctls as documented by
  * phantomptr/ps5upload (payload/include/fan_servo.h): 28 bytes, target in
@@ -119,6 +132,17 @@ static void resolve(void) {
   opt_param_int = sym("libSceSystemService.sprx", "sceSystemServiceParamGetInt");
   opt_fan = sym("libkernel_sys.sprx", "sceKernelGetCurrentFanDuty");
   opt_turnoff = sym("libSceSystemService.sprx", "sceSystemStateMgrTurnOff");
+  opt_state = sym("libSceSystemService.sprx", "sceSystemStateMgrGetCurrentState");
+  opt_focus =
+      sym("libSceSystemService.sprx", "sceSystemServiceGetAppFocusedAppStatus");
+  opt_lnc_init = sym("libSceSystemService.sprx", "sceLncUtilInitialize");
+  opt_suspend = sym("libSceSystemService.sprx", "sceLncUtilSuspendApp");
+  opt_reset_timer =
+      sym("libSceSystemService.sprx", "sceShellCoreUtilResetAutoPowerDownTimer");
+  opt_power_tick = sym("libSceSystemService.sprx", "sceSystemServicePowerTick");
+  opt_soc_power = sym("libkernel_sys.sprx", "sceKernelGetSocPowerConsumption");
+  opt_app_title =
+      sym("libSceSystemService.sprx", "sceSystemServiceGetAppTitleId");
   temps_ok = sceKernelGetCpuTemperature(&t) == 0 && t >= 0 && t <= 130;
   {
     uint8_t buf[FAN_LEN] = {0};
@@ -137,6 +161,11 @@ plat_caps plat_capabilities(void) {
   c.language = opt_param_int != NULL;
   c.power_off = opt_turnoff != NULL;
   c.fan_control = fan_device_ok;
+  c.focus = opt_focus != NULL;
+  c.power_state = opt_state != NULL;
+  c.suspend = opt_lnc_init != NULL && opt_suspend != NULL;
+  c.keep_awake = opt_reset_timer != NULL && opt_power_tick != NULL;
+  c.soc_power = opt_soc_power != NULL;
   return c;
 }
 
@@ -437,4 +466,120 @@ int plat_fan_set(int target_c) {
   }
   buf[FAN_TARGET] = (uint8_t)target_c;
   return fan_ioctl(FAN_IOCTL_SET, buf);
+}
+
+/* --- v0.4 ---------------------------------------------------------------- */
+
+int plat_power_state(void) {
+  pthread_once(&resolve_once, resolve);
+  return opt_state ? opt_state() : -1;
+}
+
+int plat_focused_app(int *app_id) {
+  uint8_t *b1, *b2;
+  int rc;
+  pthread_once(&resolve_once, resolve);
+  if (!opt_focus) {
+    return -1;
+  }
+  b1 = aligned_alloc(16, SONY_BUF);
+  b2 = aligned_alloc(16, SONY_BUF);
+  if (!b1 || !b2) {
+    free(b1);
+    free(b2);
+    return -1;
+  }
+  memset(b1, 0, SONY_BUF);
+  memset(b2, 0, SONY_BUF);
+  rc = opt_focus(b1, b2);
+  if (rc == 0) {
+    int32_t id;
+    memcpy(&id, b1, sizeof(id)); /* the first 4 bytes are the app id */
+    *app_id = id;
+  }
+  free(b1);
+  free(b2);
+  return rc;
+}
+
+int plat_suspend_app(int app_id) {
+  static bool lnc_ready;
+  static pthread_mutex_t lnc_lock = PTHREAD_MUTEX_INITIALIZER;
+  int rc = 0;
+  pthread_once(&resolve_once, resolve);
+  if (!opt_lnc_init || !opt_suspend) {
+    return -1;
+  }
+  /* Only here, on the first minimise: probe3 showed nothing wrong with it, but
+   * the console crashed once in rest mode with it initialised, so no other
+   * path may start it (spec 9a). */
+  pthread_mutex_lock(&lnc_lock);
+  if (!lnc_ready) {
+    rc = opt_lnc_init();
+    lnc_ready = rc == 0;
+  }
+  pthread_mutex_unlock(&lnc_lock);
+  return rc != 0 ? rc : opt_suspend(app_id, 0);
+}
+
+int plat_keep_awake(void) {
+  int r1, r2;
+  pthread_once(&resolve_once, resolve);
+  if (!opt_reset_timer || !opt_power_tick) {
+    return -1;
+  }
+  r1 = opt_reset_timer();
+  r2 = opt_power_tick();
+  return r1 != 0 ? r1 : r2;
+}
+
+int plat_soc_power_read(plat_soc_power *out) {
+  uint32_t *buf;
+  int rc;
+  memset(out, 0, sizeof(*out));
+  pthread_once(&resolve_once, resolve);
+  if (!opt_soc_power) {
+    return -1;
+  }
+  buf = aligned_alloc(16, SONY_BUF);
+  if (!buf) {
+    return -1;
+  }
+  memset(buf, 0, SONY_BUF);
+  rc = opt_soc_power(buf);
+  if (rc == 0) {
+    /* 8 rails, each {mW, mV, mA} as u32; whatever follows is not used. */
+    for (int i = 0; i < 8; i++) {
+      out->mw[i] = (int)buf[3 * i];
+      out->mv[i] = (int)buf[3 * i + 1];
+      out->ma[i] = (int)buf[3 * i + 2];
+    }
+    out->ok = true;
+  }
+  free(buf);
+  return rc;
+}
+
+int plat_title_of(int app_id, char title_id[10]) {
+  char *buf;
+  int rc;
+  pthread_once(&resolve_once, resolve);
+  if (!opt_app_title) {
+    return -1;
+  }
+  buf = aligned_alloc(16, SONY_BUF);
+  if (!buf) {
+    return -1;
+  }
+  memset(buf, 0, SONY_BUF);
+  rc = opt_app_title(app_id, buf);
+  if (rc == 0) {
+    memcpy(title_id, buf, 9);
+    title_id[9] = '\0';
+    if (!title_id[0]) {
+      rc = -1;
+    }
+  }
+  free(buf);
+  return rc;
 }

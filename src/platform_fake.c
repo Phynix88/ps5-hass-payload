@@ -29,7 +29,9 @@ void fake_reset(void) {
   fake.ipv4[0] = 0x0100007f + 0x01000000; /* any non-loopback value */
   fake.fan_value = 91;
   fake.n_ipv4 = 1;
-  fake.caps = (plat_caps){true, true, true, true, true, true, true, true};
+  fake.caps = (plat_caps){true, true, true, true, true, true, true, true,
+                          true, true, true, true, true};
+  fake.power_state = 1000;
 }
 
 void fake_init_from_env(void) {
@@ -194,4 +196,77 @@ int plat_fan_set(int target_c) {
 int plat_power_off(void) {
   fake.power_off_calls++;
   return fake.power_off_rc;
+}
+
+/* --- v0.4 ---------------------------------------------------------------- */
+
+int plat_power_state(void) {
+  fake.power_state_calls++;
+  if (!fake.caps.power_state) {
+    return -1;
+  }
+  return fake.power_state_rc < 0 ? fake.power_state_rc : fake.power_state;
+}
+
+int plat_focused_app(int *app_id) {
+  if (!fake.caps.focus) {
+    return -1;
+  }
+  fake.sony_calls++;
+  fake.focused_app_calls++;
+  if (fake.focused_app_rc < 0) {
+    return fake.focused_app_rc;
+  }
+  *app_id = fake.focused_app_id;
+  return 0;
+}
+
+int plat_suspend_app(int app_id) {
+  if (!fake.caps.suspend) {
+    return -1;
+  }
+  fake.sony_calls++;
+  fake.suspend_calls++;
+  fake.suspended_app_id = app_id;
+  return fake.suspend_rc;
+}
+
+int plat_keep_awake(void) {
+  if (!fake.caps.keep_awake) {
+    return -1;
+  }
+  fake.sony_calls++;
+  fake.keep_awake_calls++;
+  return fake.keep_awake_rc;
+}
+
+int plat_soc_power_read(plat_soc_power *out) {
+  memset(out, 0, sizeof(*out));
+  if (!fake.caps.soc_power) {
+    return -1;
+  }
+  fake.sony_calls++;
+  fake.soc_power_calls++;
+  if (fake.soc_power_rc < 0) {
+    return fake.soc_power_rc;
+  }
+  *out = fake.soc_power;
+  return 0;
+}
+
+int plat_title_of(int app_id, char title_id[10]) {
+  const char *t = fake.title_id;
+  fake.sony_calls++;
+  fake.title_of_calls++;
+  if (fake.title_of_rc < 0) {
+    return fake.title_of_rc;
+  }
+  if (!t[0] && fake.running.app_id == app_id) {
+    t = fake.running.title_id;
+  }
+  if (!t[0]) {
+    return -1;
+  }
+  snprintf(title_id, 10, "%s", t);
+  return 0;
 }
