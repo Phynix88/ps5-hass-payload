@@ -115,6 +115,30 @@ static void test_close_ok(void) {
   T_EQ_INT(control_close(NULL, &rc), CTL_OK);
 }
 
+static void test_suspend_running_game(void) {
+  setup();
+  fake.running = (plat_running){7, "PPSA00002"};
+  T_EQ_INT(control_suspend(), CTL_OK);
+  T_EQ_INT(fake.suspend_calls, 1);
+  T_EQ_INT(fake.suspended_app_id, 7);
+  fake.suspend_rc = -5;
+  T_EQ_INT(control_suspend(), CTL_SYSTEM_ERROR);
+}
+
+static void test_suspend_nothing_running(void) {
+  setup();
+  T_EQ_INT(control_suspend(), CTL_NO_APP);
+  T_EQ_INT(fake.suspend_calls, 0);
+}
+
+static void test_suspend_unavailable(void) {
+  setup();
+  fake.running = (plat_running){7, "PPSA00002"};
+  fake.caps.suspend = false;
+  T_EQ_INT(control_suspend(), CTL_UNAVAILABLE);
+  T_EQ_INT(fake.suspend_calls, 0);
+}
+
 static void test_standby_allowed_without_config(void) {
   int rc;
   setup(); /* fresh config: no permission switch anywhere */
@@ -243,6 +267,9 @@ int main(void) {
   T_RUN(test_close_no_app);
   T_RUN(test_close_title_mismatch);
   T_RUN(test_close_ok);
+  T_RUN(test_suspend_running_game);
+  T_RUN(test_suspend_nothing_running);
+  T_RUN(test_suspend_unavailable);
   T_RUN(test_standby_allowed_without_config);
   T_RUN(test_standby_unavailable);
   T_RUN(test_standby_rate_limited);

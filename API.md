@@ -65,6 +65,7 @@ There are no CORS headers.
 | `GET /apps/<ID>/icon` | yes | PNG or JPEG (`Content-Type` from the file signature), `ETag`; with `If-None-Match` → `304` |
 | `POST /apps/<ID>/launch` | yes | body `{"replace_running":false}` (optional) → `{"already_running":false,"app_id":24}` |
 | `POST /apps/running/close` | yes | body `{"title_id":"PPSA…"}` (optional) |
+| `POST /apps/running/suspend` | yes | minimise the running game (it stays open, paused; the console then reports no running app, so `/state` shows `in_app` false until it is opened again from the console's home screen). Answer `{"result":"ok"}`. Nothing running: `409 not_running`; without `capabilities.suspend`: `409 not_available`; outside `on`: `409 not_on` (since v0.4) |
 | `POST /power/standby` | yes | rest mode; at most once per 10 s |
 | `POST /power/off` | yes | power off (not rest mode; since v0.2); shares the 10 s limit with standby |
 | `POST /notify` | yes | body `{"message":"Dinner is ready"}`: shown as a notification on the TV (UTF-8, cut to 200 bytes, control characters removed); at most 5 per 30 s (since v0.2) |
@@ -110,7 +111,7 @@ Success answers carry `"result":"ok"`. `<ID>` must match `^[A-Z]{4}[0-9]{5}$`.
 ### Outside "on"
 
 While `power_state` is not `on`, requests that would call a console function are refused with
-`409 not_on`: `POST /apps/<ID>/launch`, `/apps/running/close`, `/power/standby`, `/power/off`, `/notify`, `/fan`,
+`409 not_on`: `POST /apps/<ID>/launch`, `/apps/running/close`, `/apps/running/suspend`, `/power/standby`, `/power/off`, `/notify`, `/fan`,
 `/pair/start`, `/pair/finish` (pairing shows its code on the TV) and `/keep_awake` with `{"on":true}`. Switching
 keep-awake off is always allowed. `GET /info`, `/state`, `/apps` and `/playtime` keep working without any console call: `/info`
 shows `model` and `firmware` as read while the console was `on` (empty strings if that has not happened yet),
@@ -205,6 +206,7 @@ fields and endpoints go away in a later version.
 | No user logged in on the console | `409 no_user` |
 | `close` with a `title_id` that is not the running app | `409 title_mismatch` |
 | `close` while nothing runs | `409 no_app` |
+| `suspend` while nothing runs | `409 not_running` |
 
 ## Errors
 
@@ -219,7 +221,7 @@ fields and endpoints go away in a later version.
 | 403 | `origin_forbidden`, `browser_guard`, `host_forbidden`, `address_forbidden` | |
 | 404 | `not_found`, `not_installed` | |
 | 405 | `method_not_allowed` | |
-| 409 | `no_code`, `code_exhausted`, `token_limit`, `other_app_running`, `no_user`, `title_mismatch`, `no_app`, `fan_above_stock`, `not_available`, `already_allowed`, `not_on` | |
+| 409 | `no_code`, `code_exhausted`, `token_limit`, `other_app_running`, `no_user`, `title_mismatch`, `no_app`, `not_running`, `fan_above_stock`, `not_available`, `already_allowed`, `not_on` | |
 | 411 | `length_required` (chunked body, or `POST` without `Content-Length`) | |
 | 413 | `body_too_large` (more than 4096 bytes) | |
 | 429 | `locked`, `rate_limited` | `retry_after` (seconds) |

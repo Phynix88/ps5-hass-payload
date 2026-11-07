@@ -375,6 +375,39 @@ static void test_close_codes(void) {
   T_EQ_INT(fake.running.app_id, 0);
 }
 
+static void test_suspend_codes(void) {
+  setup();
+  pair();
+  T_EQ_INT(call("GET", "/api/v1/apps/running/suspend", NULL), 405);
+  T_EQ_INT(call("POST", "/api/v1/apps/running/suspend", "{}"), 409);
+  T_ASSERT(strstr(body, "\"error\":\"not_running\""));
+  T_EQ_INT(fake.suspend_calls, 0);
+  fake.running = (plat_running){5, "PPSA00002"};
+  fake.caps.suspend = false;
+  T_EQ_INT(call("POST", "/api/v1/apps/running/suspend", "{}"), 409);
+  T_ASSERT(strstr(body, "\"error\":\"not_available\""));
+  fake.caps.suspend = true;
+  T_EQ_INT(call("POST", "/api/v1/apps/running/suspend", "{}"), 200);
+  T_ASSERT(strstr(body, "\"result\":\"ok\""));
+  T_EQ_INT(fake.suspended_app_id, 5);
+  fake.suspend_rc = -3;
+  T_EQ_INT(call("POST", "/api/v1/apps/running/suspend", "{}"), 500);
+}
+
+static void test_suspend_not_on(void) {
+  setup();
+  pair();
+  fake.running = (plat_running){5, "PPSA00002"};
+  fake.power_state = 500;
+  power_tick(fake.mono_ms);
+  fake.reads = fake.sony_calls = 0;
+  T_EQ_INT(call("POST", "/api/v1/apps/running/suspend", "{}"), 409);
+  T_ASSERT(strstr(body, "\"error\":\"not_on\""));
+  T_EQ_INT(fake.suspend_calls, 0);
+  T_EQ_INT(fake.reads, 0);
+  T_EQ_INT(fake.sony_calls, 0);
+}
+
 static void test_standby_codes(void) {
   setup();
   pair();
@@ -559,6 +592,7 @@ static void test_gated_routes_refuse_outside_on(void) {
   } r[] = {
       {"POST", "/api/v1/apps/PPSA00001/launch", "{}"},
       {"POST", "/api/v1/apps/running/close", "{}"},
+      {"POST", "/api/v1/apps/running/suspend", "{}"},
       {"POST", "/api/v1/power/standby", "{}"},
       {"POST", "/api/v1/power/off", "{}"},
       {"POST", "/api/v1/notify", "{\"message\":\"x\"}"},
@@ -756,6 +790,8 @@ int main(void) {
   T_RUN(test_icon_missing_404);
   T_RUN(test_launch_codes);
   T_RUN(test_close_codes);
+  T_RUN(test_suspend_codes);
+  T_RUN(test_suspend_not_on);
   T_RUN(test_standby_codes);
   T_RUN(test_standby_unavailable_409);
   T_RUN(test_revoke_then_401);

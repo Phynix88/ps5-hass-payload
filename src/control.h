@@ -28,6 +28,10 @@ void control_init(void);
 ctl_rc control_launch(const app_list *apps, const char *title_id,
                       bool replace_running, int *rc_out);
 ctl_rc control_close(const char *expected_title_or_null, int *rc_out);
+/* Minimise the running game (it stays open, paused). CTL_NO_APP when nothing
+ * runs, CTL_UNAVAILABLE without capabilities.suspend, CTL_SYSTEM_ERROR when the
+ * console refuses. The caller has checked that the console is "on". */
+ctl_rc control_suspend(void);
 /* rc_out: seconds to wait on CTL_RATE_LIMITED, console code on
  * CTL_SYSTEM_ERROR. */
 ctl_rc control_standby(const config *c, int *rc_out);

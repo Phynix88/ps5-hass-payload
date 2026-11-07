@@ -75,6 +75,23 @@ ctl_rc control_close(const char *expected, int *rc_out) {
   return CTL_OK;
 }
 
+ctl_rc control_suspend(void) {
+  plat_running run;
+  int rc;
+  if (!plat_capabilities().suspend) {
+    return CTL_UNAVAILABLE;
+  }
+  if (plat_running_app(&run) != 1) {
+    return CTL_NO_APP;
+  }
+  if ((rc = plat_suspend_app(run.app_id)) < 0) {
+    log_error("minimising %s failed rc=%d", run.title_id, rc);
+    return CTL_SYSTEM_ERROR;
+  }
+  log_msg("minimised %s", run.title_id);
+  return CTL_OK;
+}
+
 ctl_rc control_standby(const config *c, int *rc_out) {
   int64_t now = plat_mono_ms();
   int rc;

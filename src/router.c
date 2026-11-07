@@ -205,6 +205,7 @@ typedef enum {
   R_ICON,
   R_LAUNCH,
   R_CLOSE,
+  R_SUSPEND,
   R_STANDBY,
   R_NOTIFY,
   R_POWER_OFF,
@@ -231,6 +232,7 @@ static route_id match(const char *path, http_method *want, char *id,
       {PREFIX "/state", HM_GET, R_STATE},
       {PREFIX "/apps", HM_GET, R_APPS},
       {PREFIX "/apps/running/close", HM_POST, R_CLOSE},
+      {PREFIX "/apps/running/suspend", HM_POST, R_SUSPEND},
       {PREFIX "/power/standby", HM_POST, R_STANDBY},
       {PREFIX "/notify", HM_POST, R_NOTIFY},
       {PREFIX "/power/off", HM_POST, R_POWER_OFF},
@@ -287,6 +289,7 @@ static bool needs_console(route_id r) {
   case R_PAIR_FINISH:
   case R_LAUNCH:
   case R_CLOSE:
+  case R_SUSPEND:
   case R_STANDBY:
   case R_NOTIFY:
   case R_POWER_OFF:
@@ -544,6 +547,23 @@ static void h_close(const jr_t *r, route_resp *out) {
   }
 }
 
+static void h_suspend(route_resp *out) {
+  switch (control_suspend()) {
+  case CTL_OK:
+    ok(out);
+    done(out);
+    return;
+  case CTL_NO_APP:
+    fail(out, 409, "not_running", "no app is running");
+    return;
+  case CTL_UNAVAILABLE:
+    fail(out, 409, "not_available", "this console cannot minimise an app");
+    return;
+  default: /* the console's code is in the log; control_suspend has no rc */
+    fail(out, 500, "system_error", "the console reported an error");
+  }
+}
+
 static void h_standby(route_ctx *ctx, route_resp *out) {
   int rc = 0;
   switch (control_standby(ctx->cfg, &rc)) {
@@ -797,6 +817,7 @@ void route(route_ctx *ctx, const http_req *req, uint32_t peer,
   case R_ICON: h_icon(ctx, req, id, out); break;
   case R_LAUNCH: h_launch(ctx, &body, id, out); break;
   case R_CLOSE: h_close(&body, out); break;
+  case R_SUSPEND: h_suspend(out); break;
   case R_STANDBY: h_standby(ctx, out); break;
   case R_NOTIFY: h_notify(&body, out); break;
   case R_POWER_OFF: h_power_off(ctx, out); break;

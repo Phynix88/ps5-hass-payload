@@ -432,6 +432,7 @@
             "no_user",
             "title_mismatch",
             "no_app",
+            "not_running",
             "not_on",
             "length_required",
             "body_too_large",
