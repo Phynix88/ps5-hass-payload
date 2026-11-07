@@ -686,7 +686,7 @@ static void h_playtime(route_ctx *ctx, const http_req *req, route_resp *out) {
   }
   w = ok(out);
   jw_key(w, "foreground");
-  jw_bool(w, plat_capabilities().focus);
+  jw_bool(w, playtime_foreground());
   playtime_json(w, ctx->apps, since);
   done(out);
 }

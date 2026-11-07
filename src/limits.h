@@ -49,6 +49,7 @@
 #define PS5H_KEEP_AWAKE_S        240 /* keep-awake tick, below the 5 min limit */
 #define PS5H_POWER_FAIL_OPEN_S   60  /* power state unreadable this long = "on" */
 #define PS5H_PLAYTIME_POLL_S     5   /* foreground sample */
+#define PS5H_PLAYTIME_FOCUS_FAILS 3  /* focus failures in a row = count "open" */
 #define PS5H_PLAYTIME_SAVE_S     60  /* checkpoint of the running session */
 #define PS5H_PLAYTIME_GAP_S      30  /* longer without a sample ends the session */
 #define PS5H_PLAYTIME_KEEP_DAYS  400 /* older sessions are folded into totals */

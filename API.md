@@ -159,9 +159,11 @@ console, so the count survives restarts of the payload and has no gaps while Hom
 - `sessions`: finished sessions that end at or after `since`; `start` is Unix time (UTC, the console's clock),
   `duration_s` seconds. `current` is the running session (`null` when none), `duration_s` as of the last sample.
   Time zone and day or week limits are the client's business.
-- `foreground` is `capabilities.focus`. A session counts only while the console is `on`, the title runs **and** has
-  the focus (home screen and settings do not count; the control centre keeps the game's focus and does count; a
-  minimised game does not run any more). Without `capabilities.focus` the payload cannot tell and counts "title open".
+- `foreground` is `capabilities.focus`, and false while the focus call keeps failing. A session counts only while the
+  console is `on`, the title runs **and** has the focus (home screen and settings do not count; the control centre
+  keeps the game's focus and does count; a minimised game does not run any more). Without `capabilities.focus` the
+  payload cannot tell and counts "title open". The same holds after 3 failed focus reads in a row: until a focus read
+  works again, "title open" counts and `foreground` is false.
 - The payload samples every 5 s. A session ends at its last good sample when another title (or none) is in front,
   when a read from the console fails, when the console leaves `on`, after more than 30 s without a sample, or when
   the wall clock jumps against the monotonic one (NTP, waking up). A new one starts at the next good sample, so a

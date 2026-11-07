@@ -56,6 +56,7 @@ static struct {
   /* The file exists but could not be read: nothing is written until a load
    * worked, or the history in it would be overwritten. */
   bool blocked;
+  int focus_fails; /* focus call failures in a row */
 } st;
 
 static bool test_fail_alloc;
@@ -545,11 +546,19 @@ void playtime_tick(const app_list *apps, int64_t now_ms) {
     } else {
       int focus = 0;
       if (plat_focused_app(&focus) < 0) {
-        close_cur(now_ms);
-        maybe_save(now_ms);
-        return;
+        if (st.focus_fails < PS5H_PLAYTIME_FOCUS_FAILS) {
+          st.focus_fails++;
+        }
+        if (st.focus_fails < PS5H_PLAYTIME_FOCUS_FAILS) {
+          close_cur(now_ms);
+          maybe_save(now_ms);
+          return;
+        }
+        counts = true; /* keeps failing: "game open" counts until it works */
+      } else {
+        st.focus_fails = 0;
+        counts = focus == run.app_id;
       }
-      counts = focus == run.app_id;
     }
   }
   if (counts) {
@@ -590,6 +599,11 @@ void playtime_tick(const app_list *apps, int64_t now_ms) {
 }
 
 /* --- answers ------------------------------------------------------------- */
+
+bool playtime_foreground(void) {
+  return plat_capabilities().focus &&
+         st.focus_fails < PS5H_PLAYTIME_FOCUS_FAILS;
+}
 
 static void write_name(jw_t *w, const app_list *apps, const char *id) {
   const app_t *a = apps ? apps_find(apps, id) : NULL;

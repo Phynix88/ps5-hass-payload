@@ -744,6 +744,27 @@ static void test_playtime_foreground_follows_capability(void) {
   T_ASSERT(strstr(body, "\"foreground\":false"));
 }
 
+static void test_playtime_foreground_false_while_focus_fails(void) {
+  setup();
+  pair();
+  fake.running = (plat_running){.app_id = 7, .title_id = "PPSA00001"};
+  fake.focused_app_rc = -1;
+  power_tick(fake.mono_ms);
+  for (int i = 0; i < PS5H_PLAYTIME_FOCUS_FAILS; i++) {
+    fake.mono_ms += PS5H_PLAYTIME_POLL_S * 1000;
+    fake.wall_s += PS5H_PLAYTIME_POLL_S;
+    playtime_tick(ctx.apps, fake.mono_ms);
+  }
+  T_EQ_INT(call("GET", "/api/v1/playtime", NULL), 200);
+  T_ASSERT(strstr(body, "\"foreground\":false"));
+  fake.focused_app_rc = 0;
+  fake.focused_app_id = 7;
+  fake.mono_ms += PS5H_PLAYTIME_POLL_S * 1000;
+  playtime_tick(ctx.apps, fake.mono_ms);
+  T_EQ_INT(call("GET", "/api/v1/playtime", NULL), 200);
+  T_ASSERT(strstr(body, "\"foreground\":true"));
+}
+
 static void test_playtime_served_outside_on_without_console(void) {
   setup();
   pair();
@@ -858,6 +879,7 @@ int main(void) {
   T_RUN(test_info_outside_on_makes_no_console_call);
   T_RUN(test_playtime_since_param);
   T_RUN(test_playtime_foreground_follows_capability);
+  T_RUN(test_playtime_foreground_false_while_focus_fails);
   T_RUN(test_playtime_served_outside_on_without_console);
   T_RUN(test_info_has_playtime_capability);
   T_RUN(test_grant_start_answers_already_allowed);

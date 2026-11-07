@@ -41,6 +41,10 @@ void playtime_json(jw_t *w, const app_list *apps, int64_t since_wall_s);
 int64_t playtime_total_s(const char *title_id);
 /* Tests only: while set, the token buffer of the loader cannot be allocated. */
 void playtime_test_fail_alloc(bool fail);
+/* Whether counting follows the focus: false without capabilities.focus and
+ * while the focus call has failed PS5H_PLAYTIME_FOCUS_FAILS times in a row
+ * ("title open" counts then). */
+bool playtime_foreground(void);
 /* Number of finished sessions in memory. */
 int playtime_session_count(void);
 

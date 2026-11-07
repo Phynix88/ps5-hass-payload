@@ -445,6 +445,40 @@ static void test_read_error_closes_session(void) {
   T_EQ_INT(playtime_session_count(), 1);
 }
 
+/* The focus call keeps failing: after PS5H_PLAYTIME_FOCUS_FAILS failures in a
+ * row "game open" counts and the answer says foreground false, until a focus
+ * read works again. */
+static void test_focus_failing_falls_back_to_game_open(void) {
+  setup();
+  run(GAME, 100);
+  fake.focused_app_id = 100;
+  tick_now();
+  pass(10);
+  T_ASSERT(playtime_foreground());
+  fake.focused_app_rc = -1;
+  pass((PS5H_PLAYTIME_FOCUS_FAILS - 1) * PS5H_PLAYTIME_POLL_S);
+  T_EQ_INT(playtime_total_s(GAME), 10); /* closed, not bridged */
+  T_ASSERT(playtime_foreground());
+  pass(PS5H_PLAYTIME_POLL_S); /* the last failure in a row: "game open" */
+  T_ASSERT(!playtime_foreground());
+  pass(30);
+  T_EQ_INT(playtime_total_s(GAME), 40);
+  T_ASSERT(!playtime_foreground());
+  /* focus read works again: the home screen is in front, nothing counts */
+  fake.focused_app_rc = 0;
+  fake.focused_app_id = SHELL_ID;
+  pass(5);
+  T_ASSERT(playtime_foreground());
+  pass(30);
+  T_EQ_INT(playtime_total_s(GAME), 40);
+}
+
+static void test_focus_without_capability_is_not_foreground(void) {
+  setup();
+  fake.caps.focus = false;
+  T_ASSERT(!playtime_foreground());
+}
+
 /* A console call that blocks (Sony calls do, for ~35 s after waking): both
  * clocks run on during it. The wall/monotonic check must not take that for a
  * clock jump. */
@@ -617,6 +651,8 @@ static void test_console_total_in_json(void) {
 int main(void) {
   T_RUN(test_counts_only_foreground);
   T_RUN(test_control_centre_keeps_focus_and_counts);
+  T_RUN(test_focus_failing_falls_back_to_game_open);
+  T_RUN(test_focus_without_capability_is_not_foreground);
   T_RUN(test_switch_title_closes_session);
   T_RUN(test_stop_closes_session);
   T_RUN(test_gap_closes_session_at_last_sample);
