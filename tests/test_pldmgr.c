@@ -441,7 +441,7 @@ static void test_minimised_game_blocks_start_and_stop(void) {
   T_EQ_INT(pldmgr_start("repo/CheatRunner@22222222"), -EBUSY);
   T_EQ_INT(total_reqs(), 0);
   /* the game is closed: payload control works again */
-  fake.n_procs = 0;
+  snprintf(fake.procs[0], 20, "mini-syscore.elf"); /* Sony's process is left */
   T_EQ_INT(pldmgr_stop("repo/ftpsrv@e8cce5d1"), 0);
   T_EQ_INT(count_reqs("POST /process_kill?pid=97 HTTP/1.1"), 1);
   srv_stop();
@@ -451,6 +451,17 @@ static void test_minimised_game_blocks_start_and_stop(void) {
 static void test_unreadable_process_list_blocks(void) {
   fake_reset();
   fake.procs_rc = -1;
+  srv_start(M_NORMAL);
+  T_EQ_INT(pldmgr_stop("repo/ftpsrv@e8cce5d1"), -EBUSY);
+  T_EQ_INT(pldmgr_start("repo/websrv@11111111"), -EBUSY);
+  T_EQ_INT(total_reqs(), 0);
+  srv_stop();
+  fake_reset();
+}
+
+static void test_empty_process_list_blocks(void) {
+  fake_reset();
+  fake.n_procs = 0; /* our own process is always listed: the read went wrong */
   srv_start(M_NORMAL);
   T_EQ_INT(pldmgr_stop("repo/ftpsrv@e8cce5d1"), -EBUSY);
   T_EQ_INT(pldmgr_start("repo/websrv@11111111"), -EBUSY);
@@ -672,6 +683,7 @@ static void test_version_in_list(void) {
 
 int main(void) {
   signal(SIGPIPE, SIG_IGN);
+  fake_reset(); /* a console that lists processes, no game in memory */
   T_RUN(test_match_names);
   T_RUN(test_protected_names);
   T_RUN(test_list_flags);
@@ -680,6 +692,7 @@ int main(void) {
   T_RUN(test_app_running_blocks_start_and_stop);
   T_RUN(test_minimised_game_blocks_start_and_stop);
   T_RUN(test_unreadable_process_list_blocks);
+  T_RUN(test_empty_process_list_blocks);
   T_RUN(test_nothing_in_memory_cheatrunner_toggles);
   T_RUN(test_unreadable_running_app_blocks);
   T_RUN(test_start_posts_loadpayload);

@@ -60,20 +60,33 @@ int procs_payloads(plat_name *out, int max) {
   return n;
 }
 
+bool procs_list_suggests_game(const plat_name *names, int n, int cap) {
+  if (n <= 0 || n >= cap) {
+    return true; /* unreadable, empty or possibly cut: fail safe */
+  }
+  for (int i = 0; i < n; i++) {
+    if (!strncmp(names[i], "eboot.bin", sizeof(plat_name))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+int running_app_from_id(int app_id) {
+  if (app_id == -1) {
+    return 0; /* nothing runs (measured on FW 13.60), also after minimising */
+  }
+  return app_id > 0 ? 1 : -1; /* any other value is a console error (0x80xxxxxx) */
+}
+
 bool procs_game_in_memory(void) {
   plat_name *all = calloc(PS5H_MAX_PROCS, sizeof(plat_name));
-  bool found = true; /* fail safe: an unreadable or cut list counts as a game */
-  int n;
+  bool found;
   if (!all) {
     return true;
   }
-  n = plat_proc_names(all, PS5H_MAX_PROCS);
-  if (n >= 0 && n < PS5H_MAX_PROCS) {
-    found = false;
-    for (int i = 0; i < n && !found; i++) {
-      found = !strncmp(all[i], "eboot.bin", sizeof(plat_name));
-    }
-  }
+  found = procs_list_suggests_game(all, plat_proc_names(all, PS5H_MAX_PROCS),
+                                   PS5H_MAX_PROCS);
   free(all);
   return found;
 }

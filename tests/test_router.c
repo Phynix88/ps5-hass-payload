@@ -682,12 +682,17 @@ static void test_payloads_refused_while_app_runs(void) {
   T_EQ_INT(call("POST", "/api/v1/payloads/start", "{\"slot\":\"repo/ftpsrv@e8cce5d1\"}"), 409);
   T_ASSERT(strstr(body, "\"error\":\"app_running\""));
   /* an unreadable process list fails safe too */
-  fake.n_procs = 0;
   fake.procs_rc = -1;
   T_EQ_INT(call("POST", "/api/v1/payloads/stop", "{\"slot\":\"repo/ftpsrv@e8cce5d1\"}"), 409);
   T_ASSERT(strstr(body, "\"error\":\"app_running\""));
-  /* nothing in memory: the usual answer (the manager is not there) */
+  /* an empty list cannot be right either */
   fake.procs_rc = 0;
+  fake.n_procs = 0;
+  T_EQ_INT(call("POST", "/api/v1/payloads/stop", "{\"slot\":\"repo/ftpsrv@e8cce5d1\"}"), 409);
+  T_ASSERT(strstr(body, "\"error\":\"app_running\""));
+  /* nothing in memory: the usual answer (the manager is not there) */
+  strcpy(fake.procs[0], "mini-syscore.elf");
+  fake.n_procs = 1;
   T_EQ_INT(call("POST", "/api/v1/payloads/stop", "{\"slot\":\"repo/ftpsrv@e8cce5d1\"}"), 503);
   /* outside "on" the console is not asked at all */
   fake.running.app_id = 7;

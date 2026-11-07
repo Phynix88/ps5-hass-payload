@@ -44,6 +44,9 @@ void fake_reset(void) {
                           .keep_awake = true,
                           .soc_power = true};
   fake.power_state = 1000;
+  /* a real console always lists processes (at least our own) */
+  snprintf(fake.procs[0], sizeof(plat_name), "mini-syscore.elf");
+  fake.n_procs = 1;
 }
 
 static int64_t real_ms(void) {

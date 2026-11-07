@@ -77,7 +77,7 @@ int plat_ipv4_list(uint32_t *addrs, int max);
 /* What resolved on first use. */
 plat_caps plat_capabilities(void);
 /* Names (ki_comm) of all processes; returns the count, < 0 = the list could
- * not be read. */
+ * not be read or was cut short. */
 int plat_proc_names(plat_name *names, int max);
 /* Power the console off (not rest mode). */
 int plat_power_off(void);

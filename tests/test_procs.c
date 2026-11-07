@@ -47,8 +47,7 @@ static void test_payloads_from_platform(void) {
 
 static void test_game_in_memory(void) {
   fake_reset();
-  T_ASSERT(!procs_game_in_memory()); /* nothing listed */
-  snprintf(fake.procs[0], 20, "SceSysCore.elf");
+  T_ASSERT(!procs_game_in_memory()); /* the default list: Sony's own process */
   snprintf(fake.procs[1], 20, "ftpsrv.elf");
   fake.n_procs = 2;
   T_ASSERT(!procs_game_in_memory()); /* only system processes and payloads */
@@ -63,6 +62,40 @@ static void test_game_in_memory(void) {
   snprintf(fake.procs[2], 20, "eboot");
   T_ASSERT(!procs_game_in_memory());
   fake_reset();
+}
+
+/* our own process is always listed: an empty list means the read went wrong */
+static void test_empty_process_list_counts_as_game(void) {
+  fake_reset();
+  fake.n_procs = 0;
+  T_ASSERT(procs_game_in_memory());
+  fake_reset();
+}
+
+static void test_list_suggests_game(void) {
+  plat_name l[4];
+  memset(l, 0, sizeof(l));
+  snprintf(l[0], 20, "mini-syscore.elf");
+  snprintf(l[1], 20, "ftpsrv.elf");
+  T_ASSERT(!procs_list_suggests_game(l, 2, 512));
+  T_ASSERT(procs_list_suggests_game(l, 0, 512)); /* empty */
+  T_ASSERT(procs_list_suggests_game(l, -1, 512)); /* unreadable */
+  T_ASSERT(procs_list_suggests_game(l, 2, 2)); /* as long as the cap: may be cut */
+  T_ASSERT(procs_list_suggests_game(l, 3, 2));
+  T_ASSERT(!procs_list_suggests_game(l, 2, 3));
+  snprintf(l[2], 20, "eboot.bin");
+  T_ASSERT(procs_list_suggests_game(l, 3, 512));
+  T_ASSERT(!procs_list_suggests_game(l, 2, 512)); /* only what n covers */
+}
+
+static void test_running_app_from_id(void) {
+  T_EQ_INT(running_app_from_id(-1), 0); /* nothing runs, also after minimising */
+  T_EQ_INT(running_app_from_id(0), -1);
+  T_EQ_INT(running_app_from_id(-2), -1);
+  T_EQ_INT(running_app_from_id((int)0x80020010u), -1); /* console error */
+  T_EQ_INT(running_app_from_id(-2147352560), -1);
+  T_EQ_INT(running_app_from_id(24), 1);
+  T_EQ_INT(running_app_from_id(1), 1);
 }
 
 static void test_game_in_memory_fails_safe(void) {
@@ -154,6 +187,9 @@ int main(void) {
   T_RUN(test_filter_respects_max);
   T_RUN(test_payloads_from_platform);
   T_RUN(test_game_in_memory);
+  T_RUN(test_empty_process_list_counts_as_game);
+  T_RUN(test_list_suggests_game);
+  T_RUN(test_running_app_from_id);
   T_RUN(test_game_in_memory_fails_safe);
   T_RUN(test_payloads_empty_on_unreadable_list);
   T_RUN(test_stop_terms_first_then_kills);

@@ -307,11 +307,9 @@ static bool title_of(int app_id, char out[10]) {
 
 int plat_running_app(plat_running *out) {
   int app_id = sceSystemServiceGetAppIdOfRunningBigApp();
-  if (app_id == -1) {
-    return 0; /* nothing runs (measured on FW 13.60), also after minimising */
-  }
-  if (app_id <= 0) {
-    return -1; /* any other value is a console error (0x80xxxxxx) */
+  int rc = running_app_from_id(app_id);
+  if (rc <= 0) {
+    return rc;
   }
   memset(out, 0, sizeof(*out));
   out->app_id = app_id;
@@ -442,7 +440,8 @@ int plat_proc_names(plat_name *names, int max) {
   for (uint8_t *p = buf; p < buf + size && n < max;) {
     struct kinfo_proc *ki = (struct kinfo_proc *)p;
     if (!record_ok(ki, p, buf + size)) {
-      break;
+      free(buf);
+      return -1; /* cut short: the callers must not take it for the whole list */
     }
     p += ki->ki_structsize;
     snprintf(names[n++], sizeof(plat_name), "%s", ki->ki_comm);
