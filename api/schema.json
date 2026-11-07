@@ -275,6 +275,91 @@
           ],
           "additionalProperties": false
         },
+        "soc_power": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "total_mw": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "rails": {
+                  "type": "array",
+                  "maxItems": 8,
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "mw": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "mv": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "ma": {
+                        "type": "integer",
+                        "minimum": 0
+                      }
+                    },
+                    "required": [
+                      "mw",
+                      "mv",
+                      "ma"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "total_mw",
+                "rails"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "drives": {
+          "type": "array",
+          "maxItems": 10,
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "enum": [
+                  "m2",
+                  "extended",
+                  "usb0",
+                  "usb1",
+                  "usb2",
+                  "usb3",
+                  "usb4",
+                  "usb5",
+                  "usb6",
+                  "usb7"
+                ]
+              },
+              "free_mb": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "total_mb": {
+                "type": "integer",
+                "minimum": 1024
+              }
+            },
+            "required": [
+              "name",
+              "free_mb",
+              "total_mb"
+            ],
+            "additionalProperties": false
+          }
+        },
         "uptime_s": {
           "type": "integer"
         },
@@ -317,6 +402,8 @@
         "temps",
         "fan_raw",
         "storage",
+        "soc_power",
+        "drives",
         "uptime_s",
         "payload_uptime_s",
         "apps_etag",

@@ -304,6 +304,24 @@ def test_state_has_payloads_and_fan(paired):
     assert doc["fan"] == {"target_c": None, "current_c": 91, "stock_c": 91}
 
 
+def test_state_has_soc_power_and_drives(paired):
+    doc = paired.get("/api/v1/state")[1]
+    validate("state", doc)
+    assert doc["soc_power"]["total_mw"] == sum(r["mw"] for r in doc["soc_power"]["rails"])
+    assert len(doc["soc_power"]["rails"]) == 4
+    assert doc["drives"] == [{"name": "m2", "free_mb": 500000, "total_mb": 1000000}]
+
+
+def test_suspend_needs_a_running_game(paired):
+    status, doc, _ = paired.post("/api/v1/apps/running/suspend")
+    assert status == 409 and doc["error"] == "not_running"
+    validate("error", doc)
+    assert paired.post("/api/v1/apps/PPSA00001/launch")[0] == 200
+    status, doc, _ = paired.post("/api/v1/apps/running/suspend")
+    assert status == 200 and doc["result"] == "ok"
+    validate("ok", doc)
+
+
 def test_power_and_fan_allowed_after_pairing(paired):
     info = paired.get("/api/v1/info")[1]
     validate("info", info)

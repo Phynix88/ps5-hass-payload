@@ -85,6 +85,8 @@ Success answers carry `"result":"ok"`. `<ID>` must match `^[A-Z]{4}[0-9]{5}$`.
  "app":{"title_id":"PPSA96708","name":"Hikari","app_id":24},
  "temps":{"cpu":41,"soc":38},"fan_raw":131,
  "storage":{"data_free_mb":76731,"data_total_mb":838000,"user_free_mb":76731,"user_total_mb":838000},
+ "soc_power":{"total_mw":48000,"rails":[{"mw":30000,"mv":1000,"ma":30000},{"mw":18000,"mv":1200,"ma":15000}]},
+ "drives":[{"name":"m2","free_mb":500000,"total_mb":1000000}],
  "uptime_s":284,"payload_uptime_s":120,"apps_etag":"8c1f…",
  "power_state":"on","keep_awake":false}
 ```
@@ -101,9 +103,19 @@ Success answers carry `"result":"ok"`. `<ID>` must match `^[A-Z]{4}[0-9]{5}$`.
   the value the fan driver uses now, and the console's factory value (91 °C on FW 13.60), each null when unknown.
 - `power_state` (since v0.4): `on`, `going_to_rest`, `rest`, `shutting_down` or `unknown` (no reading, or a value
   that is not known). `keep_awake` (since v0.4): whether `POST /keep_awake` is on.
+- `soc_power` (since v0.4): power drawn by the console's chip, from the console's own sensor: `total_mw` is the sum
+  of the rails in milliwatts (about 48 W idle and 60 W in a game on a CFI-2116), `rails` the rails that carry power
+  (`mw`, `mv`, `ma`). It is the chip only, not what the wall socket delivers. `null` without
+  `capabilities.soc_power`, when the reading fails, or outside `on`. Read at most every 10 s; between reads the
+  answer repeats the last reading.
+- `drives` (since v0.4): external and extended storage that is present, as `{"name","free_mb","total_mb"}`:
+  `m2` (`/mnt/ext1`), `extended` (`/mnt/ext0`), `usb0` … `usb7` (`/mnt/usb0` … `/mnt/usb7`). A mount point whose
+  total is under 1024 MB counts as "no drive" and is left out, as is one that cannot be read; the list is empty
+  when there is none, and outside `on`. Checked at most every 60 s. The internal storage stays in `storage`.
+  There is no temperature for the M.2 drive.
 - **Nothing is read from the console while `power_state` is not `on`.** The payload then calls no console function
-  except the one that reports the power state. A `/state` answer in that time has `in_app` false, `app` null, `temps`, `fan_raw` and all
-  `storage` values null and `payloads` empty; `uptime_s`, `payload_uptime_s`, `apps_etag` (the last known one) and
+  except the one that reports the power state. A `/state` answer in that time has `in_app` false, `app` null, `temps`, `fan_raw`, `soc_power` and all
+  `storage` values null and `payloads` and `drives` empty; `uptime_s`, `payload_uptime_s`, `apps_etag` (the last known one) and
   `fan` (the last known values) come from memory or the clock. The fan watcher, the app rescan and keep-awake pause
   too, and continue when the state is `on` again. A console that cannot report its power state counts as `on`.
   See [Outside "on"](#outside-on) for what requests do then.

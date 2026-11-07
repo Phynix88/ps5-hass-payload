@@ -15,7 +15,7 @@ void state_json(jw_t *w, const app_list *apps, int64_t payload_start_mono_ms);
 /* Reads model and firmware once, while the console is "on"; until then /info
  * shows "". Called from the main loop and from info_json. */
 void info_cache_refresh(void);
-/* Forget the cached values (tests). */
+/* Forget the cached values: model, firmware, SoC power, drives (tests). */
 void info_cache_reset(void);
 void info_json(jw_t *w, const config *c, const char *device_id,
                bool mdns_running);

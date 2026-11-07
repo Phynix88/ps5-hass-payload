@@ -52,6 +52,15 @@ void fake_init_from_env(void) {
     snprintf(fake.root, sizeof(fake.root), "%s", root);
   }
   fake.power_from_file = true;
+  /* plausible readings so the end-to-end tests see the non-null shapes */
+  fake.soc_power = (plat_soc_power){.ok = true,
+                                    .mw = {30000, 12000, 0, 4500, 0, 0, 1500, 0},
+                                    .mv = {1000, 1200, 0, 900, 0, 0, 1500, 0},
+                                    .ma = {30000, 10000, 0, 5000, 0, 0, 1000, 0}};
+  snprintf(fake.storage_over[0].path, sizeof(fake.storage_over[0].path), "/mnt/ext1");
+  fake.storage_over[0].free_mb = 500000;
+  fake.storage_over[0].total_mb = 1000000;
+  fake.n_storage_over = 1;
   if (getenv("PS5HASS_FAKE_NO_USER")) {
     fake.user_rc = -1;
     fake.user_id = 0;
@@ -183,7 +192,19 @@ int plat_language(void) {
 
 int plat_storage_mb(const char *path, int64_t *free_mb, int64_t *total_mb) {
   fake.reads++;
-  (void)path;
+  for (int i = 0; i < fake.n_storage_over; i++) {
+    if (!strcmp(path, fake.storage_over[i].path)) {
+      if (fake.storage_over[i].rc < 0) {
+        return fake.storage_over[i].rc;
+      }
+      *free_mb = fake.storage_over[i].free_mb;
+      *total_mb = fake.storage_over[i].total_mb;
+      return 0;
+    }
+  }
+  if (!strncmp(path, "/mnt/", 5)) {
+    return -1; /* no drive */
+  }
   if (fake.storage_rc < 0) {
     return fake.storage_rc;
   }

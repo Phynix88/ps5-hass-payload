@@ -24,6 +24,14 @@ struct fake_state {
   int language;
   int storage_rc;
   int64_t free_mb, total_mb;
+  /* plat_storage_mb: paths under /mnt/ fail unless listed here (no drive);
+   * a listed path answers with its own numbers (rc < 0: fails). */
+  struct {
+    char path[32];
+    int rc;
+    int64_t free_mb, total_mb;
+  } storage_over[12];
+  int n_storage_over;
   char model[64];
   char firmware[16];
   uint32_t ipv4[4];

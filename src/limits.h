@@ -59,6 +59,9 @@
 #define PS5H_SONYTIME_RETRY_S    60   /* after a failed read; kept values stay */
 #define PS5H_SONYTIME_MAX_COPY   (8 * 1024 * 1024) /* larger app.db = skipped */
 #define PS5H_SONYTIME_MAX_TITLES 4096
+#define PS5H_SOC_POWER_CACHE_S   10   /* SoC power is re-read at most this often */
+#define PS5H_DRIVES_CACHE_S      60   /* external drives, same */
+#define PS5H_DRIVE_MIN_MB        1024 /* smaller = a mount point without a drive */
 #define PS5H_DATA_DIR            "/data/ps5-hass"
 
 #endif

@@ -7,6 +7,7 @@
 #include "json.h"
 #include "log.h"
 #include "platform_fake.h"
+#include "power.h"
 #include "state.h"
 
 static app_list apps;
@@ -17,6 +18,7 @@ static void setup(void) {
   char cmd[700];
   fake_reset();
   info_cache_reset();
+  power_init();
   snprintf(fake.root, sizeof(fake.root), "%s", t_tmpdir());
   snprintf(cmd, sizeof(cmd), "cp -R tests/data/apps/. '%s'", fake.root);
   if (system(cmd)) {
@@ -175,6 +177,152 @@ static void test_info_has_permissions(void) {
                      "\"available\":true}}"));
 }
 
+static void set_rails(void) {
+  /* four active rails; the others stay zero */
+  fake.soc_power.ok = true;
+  fake.soc_power.mw[0] = 30000, fake.soc_power.mv[0] = 1000, fake.soc_power.ma[0] = 30000;
+  fake.soc_power.mw[1] = 12000, fake.soc_power.mv[1] = 1200, fake.soc_power.ma[1] = 10000;
+  fake.soc_power.mw[3] = 4500, fake.soc_power.mv[3] = 900, fake.soc_power.ma[3] = 5000;
+  fake.soc_power.mw[6] = 1500, fake.soc_power.mv[6] = 1500, fake.soc_power.ma[6] = 1000;
+}
+
+static void add_drive(const char *path, int64_t free_mb, int64_t total_mb) {
+  int i = fake.n_storage_over++;
+  snprintf(fake.storage_over[i].path, sizeof(fake.storage_over[i].path), "%s", path);
+  fake.storage_over[i].free_mb = free_mb;
+  fake.storage_over[i].total_mb = total_mb;
+}
+
+static void test_soc_power_sum_and_rails(void) {
+  jr_t r;
+  const char *s;
+  setup();
+  set_rails();
+  T_ASSERT((s = render_state(&r)));
+  T_ASSERT(strstr(s, "\"soc_power\":{\"total_mw\":48000,\"rails\":["
+                     "{\"mw\":30000,\"mv\":1000,\"ma\":30000},"
+                     "{\"mw\":12000,\"mv\":1200,\"ma\":10000},"
+                     "{\"mw\":4500,\"mv\":900,\"ma\":5000},"
+                     "{\"mw\":1500,\"mv\":1500,\"ma\":1000}]}"));
+  /* a failing or empty reading is null */
+  info_cache_reset();
+  fake.soc_power_rc = -1;
+  T_ASSERT((s = render_state(&r)));
+  T_ASSERT(strstr(s, "\"soc_power\":null"));
+  info_cache_reset();
+  fake.soc_power_rc = 0;
+  fake.soc_power.ok = false;
+  T_ASSERT((s = render_state(&r)));
+  T_ASSERT(strstr(s, "\"soc_power\":null"));
+}
+
+static void test_soc_power_cached_10s(void) {
+  jr_t r;
+  const char *s;
+  setup();
+  set_rails();
+  T_ASSERT((s = render_state(&r)));
+  T_EQ_INT(fake.soc_power_calls, 1);
+  fake.soc_power.mw[0] = 31000;
+  fake.mono_ms += 9999;
+  T_ASSERT((s = render_state(&r)));
+  T_EQ_INT(fake.soc_power_calls, 1);
+  T_ASSERT(strstr(s, "\"total_mw\":48000"));
+  fake.mono_ms += 1;
+  T_ASSERT((s = render_state(&r)));
+  T_EQ_INT(fake.soc_power_calls, 2);
+  T_ASSERT(strstr(s, "\"total_mw\":49000"));
+  /* a console without the function: null, and no call */
+  fake.caps.soc_power = false;
+  fake.mono_ms += 10000;
+  T_ASSERT((s = render_state(&r)));
+  T_ASSERT(strstr(s, "\"soc_power\":null"));
+  T_EQ_INT(fake.soc_power_calls, 2);
+}
+
+static void test_drives_ignore_placeholders(void) {
+  jr_t r;
+  const char *s;
+  setup();
+  /* mount points without a drive report about 2 MB; /mnt/ext1 is missing */
+  add_drive("/mnt/ext0", 1, 2);
+  add_drive("/mnt/usb0", 1, 2);
+  add_drive("/mnt/usb7", 0, 1023);
+  T_ASSERT((s = render_state(&r)));
+  T_ASSERT(strstr(s, "\"drives\":[]"));
+}
+
+static void test_drives_report_real_drive(void) {
+  jr_t r;
+  const char *s;
+  setup();
+  add_drive("/mnt/ext1", 500000, 1000000);
+  add_drive("/mnt/ext0", 1, 2);
+  add_drive("/mnt/usb3", 2048, 3000);
+  add_drive("/mnt/usb0", 10, 1024);
+  T_ASSERT((s = render_state(&r)));
+  T_ASSERT(strstr(s, "\"drives\":[{\"name\":\"m2\",\"free_mb\":500000,"
+                     "\"total_mb\":1000000},{\"name\":\"usb0\",\"free_mb\":10,"
+                     "\"total_mb\":1024},{\"name\":\"usb3\",\"free_mb\":2048,"
+                     "\"total_mb\":3000}]"));
+  info_cache_reset();
+  fake.storage_over[1].free_mb = 70000;
+  fake.storage_over[1].total_mb = 80000;
+  T_ASSERT((s = render_state(&r)));
+  T_ASSERT(strstr(s, "{\"name\":\"extended\",\"free_mb\":70000,\"total_mb\":80000}"));
+}
+
+static void test_drives_cached_60s(void) {
+  jr_t r;
+  const char *s;
+  int first, second;
+  setup();
+  add_drive("/mnt/ext1", 500000, 1000000);
+  fake.reads = 0;
+  T_ASSERT((s = render_state(&r)));
+  first = fake.reads;
+  fake.reads = 0;
+  fake.storage_over[0].free_mb = 400000;
+  fake.mono_ms += 59999;
+  T_ASSERT((s = render_state(&r)));
+  T_ASSERT(strstr(s, "\"free_mb\":500000"));
+  second = fake.reads;
+  /* the ten mount points are not asked again */
+  T_ASSERT(first - second >= 10);
+  fake.mono_ms += 1;
+  T_ASSERT((s = render_state(&r)));
+  T_ASSERT(strstr(s, "\"free_mb\":400000"));
+}
+
+static void test_soc_power_and_drives_untouched_outside_on(void) {
+  jr_t r;
+  const char *s;
+  setup();
+  set_rails();
+  add_drive("/mnt/ext1", 500000, 1000000);
+  T_ASSERT((s = render_state(&r)));
+  T_ASSERT(strstr(s, "\"total_mw\":48000"));
+  fake.power_state = 500;
+  power_tick(fake.mono_ms);
+  fake.reads = fake.sony_calls = fake.soc_power_calls = 0;
+  fake.mono_ms += 600000;
+  T_ASSERT((s = render_state(&r)));
+  T_ASSERT(strstr(s, "\"soc_power\":null"));
+  T_ASSERT(strstr(s, "\"drives\":[]"));
+  T_EQ_INT(fake.reads, 0);
+  T_EQ_INT(fake.sony_calls, 0);
+  T_EQ_INT(fake.soc_power_calls, 0);
+  /* back on: read fresh, not served from before the rest */
+  fake.power_state = 1000;
+  power_tick(fake.mono_ms);
+  fake.soc_power.mw[0] = 40000;
+  fake.storage_over[0].free_mb = 1234;
+  fake.mono_ms += 1000;
+  T_ASSERT((s = render_state(&r)));
+  T_ASSERT(strstr(s, "\"total_mw\":58000"));
+  T_ASSERT(strstr(s, "\"free_mb\":1234"));
+}
+
 int main(void) {
   T_RUN(test_state_idle);
   T_RUN(test_state_running_named);
@@ -185,5 +333,11 @@ int main(void) {
   T_RUN(test_info_recovered_and_last_error);
   apps_free(&apps);
   T_RUN(test_info_has_permissions);
+  T_RUN(test_soc_power_sum_and_rails);
+  T_RUN(test_soc_power_cached_10s);
+  T_RUN(test_drives_ignore_placeholders);
+  T_RUN(test_drives_report_real_drive);
+  T_RUN(test_drives_cached_60s);
+  T_RUN(test_soc_power_and_drives_untouched_outside_on);
   T_MAIN();
 }

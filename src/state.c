@@ -33,6 +33,118 @@ static void storage(jw_t *w, const char *prefix, const char *path) {
   jw_opt_int(w, ok, total_mb);
 }
 
+/* SoC power and external drives change slowly and cost a console call each:
+ * kept for PS5H_SOC_POWER_CACHE_S / PS5H_DRIVES_CACHE_S. Outside "on" nothing
+ * is read and the caches are dropped, so the first answer after the console
+ * is "on" again is a fresh reading. */
+static struct {
+  bool have;
+  int64_t at_ms;
+  plat_soc_power value; /* value.ok false = the last read gave nothing */
+} soc_cache;
+
+#define MAX_DRIVES 10
+static const struct {
+  const char *path, *name;
+} drive_paths[MAX_DRIVES] = {
+    {"/mnt/ext1", "m2"},     {"/mnt/ext0", "extended"}, {"/mnt/usb0", "usb0"},
+    {"/mnt/usb1", "usb1"},   {"/mnt/usb2", "usb2"},     {"/mnt/usb3", "usb3"},
+    {"/mnt/usb4", "usb4"},   {"/mnt/usb5", "usb5"},     {"/mnt/usb6", "usb6"},
+    {"/mnt/usb7", "usb7"},
+};
+static struct {
+  bool have;
+  int64_t at_ms;
+  int n;
+  struct {
+    const char *name;
+    int64_t free_mb, total_mb;
+  } d[MAX_DRIVES];
+} drive_cache;
+
+static void soc_power_json(jw_t *w, bool read) {
+  int64_t now = plat_mono_ms();
+  plat_soc_power *p = &soc_cache.value;
+  if (!read) {
+    soc_cache.have = false;
+  } else if (!soc_cache.have ||
+             now - soc_cache.at_ms >= PS5H_SOC_POWER_CACHE_S * 1000 ||
+             now < soc_cache.at_ms) {
+    memset(p, 0, sizeof(*p));
+    if (plat_capabilities().soc_power && plat_soc_power_read(p) != 0) {
+      p->ok = false;
+    }
+    soc_cache.have = true;
+    soc_cache.at_ms = now;
+  }
+  jw_key(w, "soc_power");
+  if (!read || !p->ok) {
+    jw_null(w);
+    return;
+  }
+  {
+    int64_t total = 0;
+    for (int i = 0; i < 8; i++) {
+      total += p->mw[i] > 0 ? p->mw[i] : 0;
+    }
+    jw_obj(w);
+    jw_key(w, "total_mw");
+    jw_int(w, total);
+    jw_key(w, "rails");
+    jw_arr(w);
+    for (int i = 0; i < 8; i++) {
+      if (p->mw[i] > 0) {
+        jw_obj(w);
+        jw_key(w, "mw");
+        jw_int(w, p->mw[i]);
+        jw_key(w, "mv");
+        jw_int(w, p->mv[i]);
+        jw_key(w, "ma");
+        jw_int(w, p->ma[i]);
+        jw_end_obj(w);
+      }
+    }
+    jw_end_arr(w);
+    jw_end_obj(w);
+  }
+}
+
+static void drives_json(jw_t *w, bool read) {
+  int64_t now = plat_mono_ms();
+  if (!read) {
+    drive_cache.have = false;
+  } else if (!drive_cache.have ||
+             now - drive_cache.at_ms >= PS5H_DRIVES_CACHE_S * 1000 ||
+             now < drive_cache.at_ms) {
+    drive_cache.n = 0;
+    for (int i = 0; i < MAX_DRIVES; i++) {
+      int64_t free_mb = 0, total_mb = 0;
+      if (plat_storage_mb(drive_paths[i].path, &free_mb, &total_mb) == 0 &&
+          total_mb >= PS5H_DRIVE_MIN_MB) {
+        drive_cache.d[drive_cache.n].name = drive_paths[i].name;
+        drive_cache.d[drive_cache.n].free_mb = free_mb;
+        drive_cache.d[drive_cache.n].total_mb = total_mb;
+        drive_cache.n++;
+      }
+    }
+    drive_cache.have = true;
+    drive_cache.at_ms = now;
+  }
+  jw_key(w, "drives");
+  jw_arr(w);
+  for (int i = 0; read && i < drive_cache.n; i++) {
+    jw_obj(w);
+    jw_key(w, "name");
+    jw_cstr(w, drive_cache.d[i].name);
+    jw_key(w, "free_mb");
+    jw_int(w, drive_cache.d[i].free_mb);
+    jw_key(w, "total_mb");
+    jw_int(w, drive_cache.d[i].total_mb);
+    jw_end_obj(w);
+  }
+  jw_end_arr(w);
+}
+
 /* Outside "on" none of these is read: the console is left alone, every
  * reading is null. */
 static void console_json(jw_t *w, const app_list *apps, bool read) {
@@ -84,6 +196,8 @@ static void console_json(jw_t *w, const app_list *apps, bool read) {
     }
   }
   jw_end_obj(w);
+  soc_power_json(w, read);
+  drives_json(w, read);
 }
 
 void state_json(jw_t *w, const app_list *apps, int64_t start_ms) {
@@ -126,7 +240,11 @@ void info_cache_refresh(void) {
   cache.have = true;
 }
 
-void info_cache_reset(void) { memset(&cache, 0, sizeof(cache)); }
+void info_cache_reset(void) {
+  memset(&cache, 0, sizeof(cache));
+  memset(&soc_cache, 0, sizeof(soc_cache));
+  memset(&drive_cache, 0, sizeof(drive_cache));
+}
 
 void info_json(jw_t *w, const config *c, const char *device_id,
                bool mdns_running) {
