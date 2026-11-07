@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
 
 struct fake_state fake;
@@ -45,6 +46,16 @@ void fake_reset(void) {
   fake.power_state = 1000;
 }
 
+static int64_t real_ms(void) {
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (int64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
+static int64_t real_elapsed_ms(void) {
+  return fake.real_clock ? real_ms() - fake.real_start_ms : 0;
+}
+
 void fake_init_from_env(void) {
   const char *root = getenv("PS5HASS_ROOT");
   fake_reset();
@@ -52,6 +63,8 @@ void fake_init_from_env(void) {
     snprintf(fake.root, sizeof(fake.root), "%s", root);
   }
   fake.power_from_file = true;
+  fake.real_clock = true;
+  fake.real_start_ms = real_ms();
   /* plausible readings so the end-to-end tests see the non-null shapes */
   fake.soc_power = (plat_soc_power){.ok = true,
                                     .mw = {30000, 12000, 0, 4500, 0, 0, 1500, 0},
@@ -68,8 +81,8 @@ void fake_init_from_env(void) {
 }
 
 int plat_init(void) { return 0; }
-int64_t plat_wall_s(void) { return fake.wall_s; }
-int64_t plat_mono_ms(void) { return fake.mono_ms; }
+int64_t plat_wall_s(void) { return fake.wall_s + real_elapsed_ms() / 1000; }
+int64_t plat_mono_ms(void) { return fake.mono_ms + real_elapsed_ms(); }
 int64_t plat_uptime_s(void) { return fake.uptime_s; }
 const char *plat_root(void) { return fake.root; }
 

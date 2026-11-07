@@ -56,6 +56,10 @@ struct fake_state {
   int sony_calls;
   int power_state; /* 1000 on */
   bool power_from_file; /* host server: <root>/fake-power-state overrides it */
+  /* host server: both clocks run with real time from wall_s and mono_ms on
+   * (a frozen clock would stop everything paced by the monotonic clock) */
+  bool real_clock;
+  int64_t real_start_ms;
   int power_state_rc;
   int power_state_calls;
   int focused_app_id;

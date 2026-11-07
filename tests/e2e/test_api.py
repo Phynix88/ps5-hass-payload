@@ -472,7 +472,7 @@ def test_grant_endpoints_compat(paired):
     assert status == 401
 
 
-# The host server's clock is fixed at 1790000000 (fake console).
+# The host server's clock starts at 1790000000 (fake console) and runs on in real time.
 PLAYTIME_FILE = json.dumps({
     "schema": 1,
     "titles": {
