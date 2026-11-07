@@ -46,6 +46,12 @@ int device_id_get(char out[33]);
 
 /* <root>/data/ps5-hass, created (0700) when missing. */
 int config_data_dir(char *out, size_t cap);
+/* Whole regular file (no symlink) of at most max bytes; malloc'd and
+ * NUL-terminated, *len set. NULL with errno ENOENT when missing, EINVAL when
+ * too large or not a regular file. */
+char *config_read_small(const char *path, size_t max, size_t *len);
+/* temp file + fsync + rename, mode 0600; 0 = ok. */
+int config_write_atomic(const char *path, const char *data, size_t len);
 /* Shared helpers (also used by auth). */
 bool config_is_hex(const char *s, int n);
 /* "2026-11-06T13:00:00Z" */

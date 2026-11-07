@@ -47,6 +47,14 @@
 #define PS5H_FAN_MAX_FAILS       5
 #define PS5H_MAX_PROCS           512 /* process names read per scan */
 #define PS5H_KEEP_AWAKE_S        240 /* keep-awake tick, below the 5 min limit */
+#define PS5H_PLAYTIME_POLL_S     5   /* foreground sample */
+#define PS5H_PLAYTIME_SAVE_S     60  /* checkpoint of the running session */
+#define PS5H_PLAYTIME_GAP_S      30  /* longer without a sample ends the session */
+#define PS5H_PLAYTIME_KEEP_DAYS  400 /* older sessions are folded into totals */
+#define PS5H_PLAYTIME_MAX_SESSIONS 20000
+#define PS5H_PLAYTIME_MAX_TITLES 2048
+#define PS5H_PLAYTIME_MAX_FILE   (4 * 1024 * 1024) /* larger = set aside */
+#define PS5H_PLAYTIME_DEFAULT_DAYS 8 /* GET /playtime without ?since= */
 #define PS5H_DATA_DIR            "/data/ps5-hass"
 
 #endif

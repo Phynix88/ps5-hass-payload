@@ -76,7 +76,7 @@ static int path_in_data(const char *name, char *out, size_t cap) {
 
 /* Whole regular file (no symlink) up to max bytes; malloc'd, NUL-terminated.
  * errno ENOENT when missing. */
-static char *read_small(const char *path, size_t max, size_t *len) {
+char *config_read_small(const char *path, size_t max, size_t *len) {
   struct stat st;
   char *buf;
   ssize_t n;
@@ -103,7 +103,7 @@ static char *read_small(const char *path, size_t max, size_t *len) {
 }
 
 /* temp file + fsync + rename, mode 0600. */
-static int write_atomic(const char *path, const char *data, size_t len) {
+int config_write_atomic(const char *path, const char *data, size_t len) {
   char tmp[800];
   int fd;
   snprintf(tmp, sizeof(tmp), "%s.tmp", path);
@@ -254,7 +254,7 @@ int config_load(config *c) {
   if (path_in_data("config.json", path, sizeof(path))) {
     return -1;
   }
-  if (!(buf = read_small(path, 65536, &len))) {
+  if (!(buf = config_read_small(path, 65536, &len))) {
     if (errno != ENOENT) {
       set_aside(path, c, "unreadable");
     }
@@ -370,7 +370,7 @@ int config_save(const config *c) {
     jw_free(&w);
     return -1;
   }
-  rc = write_atomic(path, w.buf, w.len);
+  rc = config_write_atomic(path, w.buf, w.len);
   jw_free(&w);
   if (rc) {
     log_error("config: could not write %s", path);
@@ -386,7 +386,7 @@ int device_id_get(char out[33]) {
   if (path_in_data("device_id", path, sizeof(path))) {
     return -1;
   }
-  if ((buf = read_small(path, 64, &len))) {
+  if ((buf = config_read_small(path, 64, &len))) {
     while (len && (buf[len - 1] == '\n' || buf[len - 1] == '\r')) {
       buf[--len] = '\0';
     }
@@ -404,5 +404,5 @@ int device_id_get(char out[33]) {
   for (int i = 0; i < 16; i++) {
     snprintf(out + 2 * i, 3, "%02x", raw[i]);
   }
-  return write_atomic(path, out, 32);
+  return config_write_atomic(path, out, 32);
 }

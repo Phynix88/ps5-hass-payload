@@ -116,6 +116,24 @@ static void test_path_too_long_400(void) {
   T_EQ_INT(parse(buf, &r), -400);
 }
 
+static void test_query_kept(void) {
+  http_req r;
+  char buf[600], q[300];
+  T_ASSERT(parse("GET /api/v1/playtime?since=5&x=y HTTP/1.1\r\n\r\n", &r) > 0);
+  T_EQ_STR(r.path, "/api/v1/playtime");
+  T_EQ_STR(r.query, "since=5&x=y");
+  T_ASSERT(!r.query_cut);
+  T_ASSERT(parse("GET /api/v1/playtime HTTP/1.1\r\n\r\n", &r) > 0);
+  T_EQ_STR(r.query, "");
+  /* a very long query still parses; it is marked as cut */
+  memset(q, 'a', sizeof(q));
+  q[sizeof(q) - 1] = '\0';
+  snprintf(buf, sizeof(buf), "GET /api/v1/info?%s HTTP/1.1\r\n\r\n", q);
+  T_ASSERT(parse(buf, &r) > 0);
+  T_ASSERT(r.query_cut);
+  T_EQ_INT(strlen(r.query), sizeof(r.query) - 1);
+}
+
 static void test_other_method(void) {
   http_req r;
   T_ASSERT(parse("DELETE /api/v1/info HTTP/1.1\r\n\r\n", &r) > 0);
@@ -171,6 +189,7 @@ int main(void) {
   T_RUN(test_path_too_long_400);
   T_RUN(test_other_method);
   T_RUN(test_query_stripped);
+  T_RUN(test_query_kept);
   T_RUN(test_parse_not_nul_terminated);
   T_RUN(test_head_serialization);
   T_MAIN();

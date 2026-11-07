@@ -120,7 +120,8 @@ static void test_info_fields_and_capabilities(void) {
                      "\"standby\":false,\"mdns\":true,\"power_off\":true,"
                      "\"fan_control\":true,\"focus\":true,"
                      "\"power_state\":true,\"suspend\":true,"
-                     "\"keep_awake\":true,\"soc_power\":true}"));
+                     "\"keep_awake\":true,\"soc_power\":true,"
+                     "\"playtime\":true}"));
   T_ASSERT(strstr(s, "\"last_error\":"));
 }
 

@@ -12,6 +12,7 @@
 #include "json.h"
 #include "limits.h"
 #include "platform_fake.h"
+#include "playtime.h"
 #include "power.h"
 #include "router.h"
 #include "state.h"
@@ -36,6 +37,7 @@ static void setup(void) {
   auth_init(&cfg);
   control_init();
   power_init();
+  playtime_load();
   info_cache_reset();
   apps_free(&apps);
   memset(&ctx, 0, sizeof(ctx));
@@ -618,6 +620,70 @@ static void test_info_outside_on_makes_no_console_call(void) {
   T_ASSERT(strstr(body, "\"model\":\"CFI-TEST\""));
 }
 
+static void test_playtime_since_param(void) {
+  char file[512];
+  setup();
+  T_EQ_INT(call("GET", "/api/v1/playtime", NULL), 401);
+  pair();
+  snprintf(file, sizeof(file),
+           "{\"schema\":1,\"titles\":{\"PPSA00002\":{\"kind\":\"game\",\"total_s\":90}},"
+           "\"sessions\":[[\"PPSA00002\",\"game\",%lld,30],[\"PPSA00002\",\"game\",%lld,60]]}",
+           (long long)(fake.wall_s - 20 * 86400), (long long)(fake.wall_s - 3600));
+  T_ASSERT(!playtime_load_buf(file, strlen(file), fake.wall_s));
+  /* default: the last 8 days */
+  T_EQ_INT(call("GET", "/api/v1/playtime", NULL), 200);
+  T_ASSERT(strstr(body, "{\"result\":\"ok\",\"foreground\":true,\"titles\":["));
+  T_ASSERT(strstr(body, "\"total_s\":90,\"console_total_s\":null"));
+  T_ASSERT(strstr(body, "\"duration_s\":60"));
+  T_ASSERT(!strstr(body, "\"duration_s\":30"));
+  T_ASSERT(strstr(body, "\"current\":null"));
+  T_EQ_INT(call("GET", "/api/v1/playtime?since=0", NULL), 200);
+  T_ASSERT(strstr(body, "\"duration_s\":30"));
+  T_EQ_INT(call("GET", "/api/v1/playtime?x=1&since=0&y=2", NULL), 200);
+  T_ASSERT(strstr(body, "\"duration_s\":30"));
+  T_EQ_INT(call("GET", "/api/v1/playtime?other=abc", NULL), 200);
+  {
+    char q[128];
+    snprintf(q, sizeof(q), "/api/v1/playtime?since=%lld", (long long)fake.wall_s);
+    T_EQ_INT(call("GET", q, NULL), 200);
+    T_ASSERT(strstr(body, "\"sessions\":[]"));
+  }
+  /* invalid since */
+  T_EQ_INT(call("GET", "/api/v1/playtime?since=abc", NULL), 400);
+  T_ASSERT(strstr(body, "\"error\":\"bad_request\""));
+  T_EQ_INT(call("GET", "/api/v1/playtime?since=", NULL), 400);
+  T_EQ_INT(call("GET", "/api/v1/playtime?since=-5", NULL), 400);
+  T_EQ_INT(call("GET", "/api/v1/playtime?since=12x", NULL), 400);
+  T_EQ_INT(call("GET", "/api/v1/playtime?since=99999999999999999999", NULL), 400);
+  T_EQ_INT(call("GET", "/api/v1/playtime?since=1&since=abc", NULL), 200); /* first wins */
+  T_EQ_INT(call("POST", "/api/v1/playtime", "{}"), 405);
+}
+
+static void test_playtime_foreground_follows_capability(void) {
+  setup();
+  pair();
+  fake.caps.focus = false;
+  T_EQ_INT(call("GET", "/api/v1/playtime", NULL), 200);
+  T_ASSERT(strstr(body, "\"foreground\":false"));
+}
+
+static void test_playtime_served_outside_on_without_console(void) {
+  setup();
+  pair();
+  fake.power_state = 500;
+  power_tick(fake.mono_ms);
+  fake.reads = fake.sony_calls = 0;
+  T_EQ_INT(call("GET", "/api/v1/playtime", NULL), 200);
+  T_EQ_INT(fake.reads, 0);
+  T_EQ_INT(fake.sony_calls, 0);
+}
+
+static void test_info_has_playtime_capability(void) {
+  setup();
+  T_EQ_INT(call("GET", "/api/v1/info", NULL), 200);
+  T_ASSERT(strstr(body, "\"playtime\":true"));
+}
+
 static void test_grant_start_answers_already_allowed(void) {
   int shown;
   setup();
@@ -708,6 +774,10 @@ int main(void) {
   T_RUN(test_unauthenticated_pair_refused_outside_on);
   T_RUN(test_keep_awake_off_and_reads_work_outside_on);
   T_RUN(test_info_outside_on_makes_no_console_call);
+  T_RUN(test_playtime_since_param);
+  T_RUN(test_playtime_foreground_follows_capability);
+  T_RUN(test_playtime_served_outside_on_without_console);
+  T_RUN(test_info_has_playtime_capability);
   T_RUN(test_grant_start_answers_already_allowed);
   T_RUN(test_grant_finish_answers_no_code);
   T_RUN(test_grant_revoke_is_noop_200);

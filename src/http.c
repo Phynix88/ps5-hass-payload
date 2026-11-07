@@ -77,6 +77,15 @@ static int parse_request_line(const char *s, const char *e, http_req *out) {
   }
   memcpy(out->path, sp1 + 1, n);
   out->path[n] = '\0';
+  if (q) {
+    size_t qn = (size_t)(sp2 - q - 1);
+    if (qn >= sizeof(out->query)) {
+      qn = sizeof(out->query) - 1;
+      out->query_cut = true;
+    }
+    memcpy(out->query, q + 1, qn);
+    out->query[qn] = '\0';
+  }
   return 0;
 }
 

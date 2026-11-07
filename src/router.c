@@ -18,6 +18,7 @@
 #include "mdns.h"
 #include "perm.h"
 #include "platform.h"
+#include "playtime.h"
 #include "power.h"
 #include "state.h"
 
@@ -209,6 +210,7 @@ typedef enum {
   R_POWER_OFF,
   R_FAN,
   R_KEEP_AWAKE,
+  R_PLAYTIME,
   R_GRANT_START,
   R_GRANT_FINISH,
   R_GRANT_REVOKE
@@ -234,6 +236,7 @@ static route_id match(const char *path, http_method *want, char *id,
       {PREFIX "/power/off", HM_POST, R_POWER_OFF},
       {PREFIX "/fan", HM_POST, R_FAN},
       {PREFIX "/keep_awake", HM_POST, R_KEEP_AWAKE},
+      {PREFIX "/playtime", HM_GET, R_PLAYTIME},
       {PREFIX "/grant/start", HM_POST, R_GRANT_START},
       {PREFIX "/grant/finish", HM_POST, R_GRANT_FINISH},
       {PREFIX "/grant/revoke", HM_POST, R_GRANT_REVOKE},
@@ -609,6 +612,54 @@ static void h_keep_awake(const jr_t *r, route_resp *out) {
   done(out);
 }
 
+/* Value of "since" in a query string (first one wins); *found = false when
+ * absent. false = present but not 1..11 digits. */
+static bool query_since(const http_req *req, bool *found, int64_t *out) {
+  const char *q = req->query;
+  *found = false;
+  while (*q) {
+    const char *end = strchr(q, '&');
+    size_t n = end ? (size_t)(end - q) : strlen(q);
+    if (n >= 6 && !strncmp(q, "since=", 6)) {
+      int64_t v = 0;
+      size_t digits = n - 6;
+      if (req->query_cut || digits < 1 || digits > 11) {
+        return false;
+      }
+      for (size_t i = 0; i < digits; i++) {
+        if (q[6 + i] < '0' || q[6 + i] > '9') {
+          return false;
+        }
+        v = v * 10 + (q[6 + i] - '0');
+      }
+      *found = true;
+      *out = v;
+      return true;
+    }
+    q += n + (end ? 1 : 0);
+  }
+  return true;
+}
+
+/* Stored data only: works in every power state, no console call. */
+static void h_playtime(route_ctx *ctx, const http_req *req, route_resp *out) {
+  int64_t since = 0;
+  bool found;
+  jw_t *w;
+  if (!query_since(req, &found, &since)) {
+    fail(out, 400, "bad_request", "since must be a Unix time in seconds");
+    return;
+  }
+  if (!found) {
+    since = plat_wall_s() - (int64_t)PS5H_PLAYTIME_DEFAULT_DAYS * 86400;
+  }
+  w = ok(out);
+  jw_key(w, "foreground");
+  jw_bool(w, plat_capabilities().focus);
+  playtime_json(w, ctx->apps, since);
+  done(out);
+}
+
 static void h_power_off(route_ctx *ctx, route_resp *out) {
   int rc = 0;
   switch (control_power_off(ctx->cfg, &rc)) {
@@ -751,6 +802,7 @@ void route(route_ctx *ctx, const http_req *req, uint32_t peer,
   case R_POWER_OFF: h_power_off(ctx, out); break;
   case R_FAN: h_fan(ctx, &body, out); break;
   case R_KEEP_AWAKE: h_keep_awake(&body, out); break;
+  case R_PLAYTIME: h_playtime(ctx, req, out); break;
   case R_GRANT_START: h_grant_start(out); break;
   case R_GRANT_FINISH: h_grant_finish(out); break;
   case R_GRANT_REVOKE: h_grant_revoke(out); break;

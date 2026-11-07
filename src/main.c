@@ -13,6 +13,7 @@
 #include "log.h"
 #include "mdns.h"
 #include "platform.h"
+#include "playtime.h"
 #include "power.h"
 #include "router.h"
 #include "server.h"
@@ -26,6 +27,13 @@
 #define PS5H_VERSION "dev"
 #endif
 
+static volatile sig_atomic_t stop;
+
+static void on_signal(int sig) {
+  (void)sig;
+  stop = 1;
+}
+
 int main(void) {
   static config cfg;
   static app_list apps;
@@ -37,6 +45,8 @@ int main(void) {
   fake_init_from_env();
 #endif
   signal(SIGPIPE, SIG_IGN);
+  signal(SIGTERM, on_signal);
+  signal(SIGINT, on_signal);
   if (plat_init()) {
     log_error("platform init failed");
   }
@@ -49,6 +59,7 @@ int main(void) {
   control_init();
   power_init();
   power_tick(plat_mono_ms());
+  playtime_load();
   info_cache_refresh();
   fan_init(&cfg);
   apps_scan(&apps);
@@ -66,8 +77,10 @@ int main(void) {
   if (mdns_start(device_id, cfg.port, auth_paired())) {
     log_error("mDNS could not start; enter the IP address in Home Assistant");
   }
-  for (;;) {
+  while (!stop) {
     server_step(s, 1000);
   }
+  playtime_flush();
+  server_free(s);
   return 0;
 }

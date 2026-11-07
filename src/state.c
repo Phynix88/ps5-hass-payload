@@ -184,6 +184,8 @@ void info_json(jw_t *w, const config *c, const char *device_id,
   jw_bool(w, caps.keep_awake);
   jw_key(w, "soc_power");
   jw_bool(w, caps.soc_power);
+  jw_key(w, "playtime");
+  jw_bool(w, true);
   jw_end_obj(w);
   perm_json(w);
   jw_key(w, "last_error");

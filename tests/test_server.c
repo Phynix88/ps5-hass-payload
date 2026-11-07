@@ -14,6 +14,7 @@
 #include "control.h"
 #include "fan.h"
 #include "platform_fake.h"
+#include "playtime.h"
 #include "power.h"
 #include "router.h"
 #include "server.h"
@@ -437,6 +438,34 @@ static void test_fan_init_deferred_until_on(void) {
   server_free(s);
 }
 
+static void test_server_counts_playtime_when_on_only(void) {
+  server *s = setup(0);
+  playtime_load();
+  fake.running.app_id = 100;
+  snprintf(fake.running.title_id, sizeof(fake.running.title_id), "PPSA00002");
+  fake.focused_app_id = 100;
+  for (int i = 0; i < 4; i++) { /* 5 s apart, wall and monotonic together */
+    fake.mono_ms += 5000;
+    fake.wall_s += 5;
+    pump(s, 1);
+  }
+  T_EQ_INT(playtime_total_s("PPSA00002"), 15);
+  fake.power_state = 500;
+  fake.mono_ms += 5000;
+  fake.wall_s += 5;
+  pump(s, 1);
+  fake.reads = fake.sony_calls = 0;
+  for (int i = 0; i < 4; i++) {
+    fake.mono_ms += 5000;
+    fake.wall_s += 5;
+    pump(s, 1);
+  }
+  T_EQ_INT(fake.reads, 0);
+  T_EQ_INT(fake.sony_calls, 0);
+  T_EQ_INT(playtime_total_s("PPSA00002"), 15);
+  server_free(s);
+}
+
 static void test_fan_tick_runs(void) {
   int rc;
   server *s = setup(0);
@@ -467,6 +496,7 @@ int main(void) {
   T_RUN(test_server_suspend_gap_rebinds);
   T_RUN(test_server_iface_change_rebinds);
   T_RUN(test_server_accept_error_rebinds_with_backoff);
+  T_RUN(test_server_counts_playtime_when_on_only);
   T_RUN(test_fan_tick_runs);
   apps_free(&apps);
   T_MAIN();

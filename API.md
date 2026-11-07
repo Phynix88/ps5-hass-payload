@@ -56,7 +56,7 @@ There are no CORS headers.
 
 | Method and path | Token | Answer |
 |---|---|---|
-| `GET /info` | no | `name`, `version`, `commit`, `api` (1), `device_id`, `model`, `firmware`, `paired`, `power_actions` (`true` when the console can enter rest mode), `config` (`ok`/`recovered`), `capabilities{temps,fan,notify,random,launch,standby,mdns,power_off,fan_control,focus,power_state,suspend,keep_awake,soc_power}`, `permissions{power_actions,power_off,fan_control}` (each `{allowed,available}`; kept for v0.3 clients, `allowed` always equals `available`), `last_error` |
+| `GET /info` | no | `name`, `version`, `commit`, `api` (1), `device_id`, `model`, `firmware`, `paired`, `power_actions` (`true` when the console can enter rest mode), `config` (`ok`/`recovered`), `capabilities{temps,fan,notify,random,launch,standby,mdns,power_off,fan_control,focus,power_state,suspend,keep_awake,soc_power,playtime}`, `permissions{power_actions,power_off,fan_control}` (each `{allowed,available}`; kept for v0.3 clients, `allowed` always equals `available`), `last_error` |
 | `POST /pair/start` | no | `{"expires_in":120}` |
 | `POST /pair/finish` | no | `{"token":"<64 hex>"}` |
 | `POST /pair/revoke` | yes | `{}` |
@@ -70,6 +70,7 @@ There are no CORS headers.
 | `POST /notify` | yes | body `{"message":"Dinner is ready"}`: shown as a notification on the TV (UTF-8, cut to 200 bytes, control characters removed); at most 5 per 30 s (since v0.2) |
 | `POST /fan` | yes | body `{"threshold_c":70}` (45..85) or `{"threshold_c":0}` (back to the console's own value); answer `{"fan":{…}}` (since v0.2) |
 | `POST /keep_awake` | yes | body `{"on":true}`; answer `{"keep_awake":true}`. While on, the payload resets the console's auto power-down timer every 240 s. Without `capabilities.keep_awake`: `409 not_available`. The setting lives in memory only (off after a payload restart) and does not stop rest mode started by a button or a request (since v0.4) |
+| `GET /playtime` | yes | `?since=<unix seconds>` (default: now minus 8 days; not a number of 1 to 11 digits: `400 bad_request`). Play time per title, see [Play time](#play-time-since-v04) (since v0.4) |
 | `POST /grant/start` | yes | compatibility only: always `409 already_allowed` (see [Permissions](#permissions-removed-in-v04)) |
 | `POST /grant/finish` | yes | compatibility only: always `409 no_code` |
 | `POST /grant/revoke` | yes | compatibility only: `200` with `{"permissions":{…}}`, nothing is revoked |
@@ -111,11 +112,41 @@ Success answers carry `"result":"ok"`. `<ID>` must match `^[A-Z]{4}[0-9]{5}$`.
 While `power_state` is not `on`, requests that would call a console function are refused with
 `409 not_on`: `POST /apps/<ID>/launch`, `/apps/running/close`, `/power/standby`, `/power/off`, `/notify`, `/fan`,
 `/pair/start`, `/pair/finish` (pairing shows its code on the TV) and `/keep_awake` with `{"on":true}`. Switching
-keep-awake off is always allowed. `GET /info`, `/state` and `/apps` keep working without any console call: `/info`
+keep-awake off is always allowed. `GET /info`, `/state`, `/apps` and `/playtime` keep working without any console call: `/info`
 shows `model` and `firmware` as read while the console was `on` (empty strings if that has not happened yet),
-`/apps` the last list. A client that wants to act on a console in rest mode wakes it first (for example with the
+`/apps` the last list, `GET /playtime` serves what is stored. A client that wants to act on a console in rest mode wakes it first (for example with the
 PlayStation 5 integration) and retries. The payload's own notice about a busy port is skipped outside `on` and
 sent once the console is `on` again.
+
+### Play time (since v0.4)
+
+The payload counts how long each title is **in the foreground** and keeps it in `data/ps5-hass/playtime.json` on the
+console, so the count survives restarts of the payload and has no gaps while Home Assistant is down.
+
+```json
+{"result":"ok","foreground":true,
+ "titles":[{"title_id":"PPSA96708","name":"Hikari","kind":"game","total_s":5400,"console_total_s":null}],
+ "sessions":[{"title_id":"PPSA96708","kind":"game","start":1790000000,"duration_s":1800}],
+ "current":{"title_id":"PPSA96708","kind":"game","start":1790003000,"duration_s":95}}
+```
+
+- `titles`: every title with its total, including the running session. `name` is the title id when the title is not
+  installed. `kind` is `game` or `app` (as in `/apps`; a title the payload does not know counts as `app`, so it never
+  adds to game time). `console_total_s` is the console's own count; it is `null` until a later version fills it.
+- `sessions`: finished sessions that end at or after `since`; `start` is Unix time (UTC, the console's clock),
+  `duration_s` seconds. `current` is the running session (`null` when none), `duration_s` as of the last sample.
+  Time zone and day or week limits are the client's business.
+- `foreground` is `capabilities.focus`. A session counts only while the console is `on`, the title runs **and** has
+  the focus (home screen and settings do not count; the control centre keeps the game's focus and does count; a
+  minimised game does not run any more). Without `capabilities.focus` the payload cannot tell and counts "title open".
+- The payload samples every 5 s. A session ends when another title (or none) is in front, when the console leaves
+  `on`, after more than 30 s without a sample, or when the wall clock jumps against the monotonic clock (NTP, waking
+  up): it ends at the last sample and a new one starts, so a duration is never negative or inflated. Durations come
+  from the monotonic clock.
+- The running session is saved at least every 60 s and when the payload stops; after a crash at most a minute is
+  lost. Sessions older than 400 days are folded into `total_s`; at most 20000 sessions and 2048 titles are kept (the
+  oldest sessions go first, totals stay). A broken or oversized `playtime.json` is renamed to `playtime.json.bad`,
+  `last_error` says so, and counting starts again.
 
 ### Fan threshold (since v0.2)
 

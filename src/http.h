@@ -11,6 +11,8 @@ typedef enum { HM_GET, HM_POST, HM_OTHER } http_method;
 typedef struct {
   http_method method;
   char path[256];
+  char query[256]; /* after '?', without it; cut when longer */
+  bool query_cut;
   bool has_origin, has_marker, chunked, has_length;
   char host[256], content_type[64], authorization[128], if_none_match[80];
   size_t content_length;

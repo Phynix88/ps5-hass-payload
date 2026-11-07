@@ -35,7 +35,7 @@ def free_port():
 class Console:
     """A running ps5-hass-host with its own fake root."""
 
-    def __init__(self, tmp, env_extra=None, config_extra=None):
+    def __init__(self, tmp, env_extra=None, config_extra=None, data_files=None):
         self.root = tmp
         shutil.copytree(ROOT / "tests" / "data" / "apps", tmp, dirs_exist_ok=True)
         (tmp / "data" / "ps5-hass").mkdir(parents=True, exist_ok=True)
@@ -43,6 +43,8 @@ class Console:
         (tmp / "data" / "ps5-hass" / "config.json").write_text(
             json.dumps({"schema": 1, "port": self.port, **(config_extra or {})})
         )
+        for name, text in (data_files or {}).items():
+            (tmp / "data" / "ps5-hass" / name).write_text(text)
         env = dict(os.environ, PS5HASS_ROOT=str(tmp), **(env_extra or {}))
         self.proc = subprocess.Popen([str(HOST_BIN)], env=env)
         self.token = None
@@ -419,3 +421,78 @@ def test_grant_endpoints_compat(paired):
     paired.token = None
     status, doc, _ = paired.post("/api/v1/grant/start", {"permissions": ["power_off"]})
     assert status == 401
+
+
+# The host server's clock is fixed at 1790000000 (fake console).
+PLAYTIME_FILE = json.dumps({
+    "schema": 1,
+    "titles": {
+        "PPSA00002": {"kind": "game", "total_s": 4000},
+        "CUSA00010": {"kind": "app", "total_s": 600},
+    },
+    "sessions": [
+        ["PPSA00002", "game", 1789000000, 1000],  # 11 days old
+        ["PPSA00002", "game", 1789900000, 3000],
+        ["CUSA00010", "app", 1789950000, 600],
+    ],
+})
+
+
+def test_playtime_schema(tmp_path):
+    c = Console(tmp_path, data_files={"playtime.json": PLAYTIME_FILE})
+    try:
+        info = c.get("/api/v1/info")[1]
+        validate("info", info)
+        assert info["capabilities"]["playtime"] is True
+        assert c.get("/api/v1/playtime")[0] == 401
+        c.pair()
+        status, doc, _ = c.get("/api/v1/playtime")
+        assert status == 200
+        validate("playtime", doc)
+        assert doc["foreground"] is True and doc["current"] is None
+        totals = {t["title_id"]: t for t in doc["titles"]}
+        assert totals["PPSA00002"]["total_s"] == 4000
+        assert totals["PPSA00002"]["name"]
+        assert totals["PPSA00002"]["kind"] == "game"
+        assert totals["PPSA00002"]["console_total_s"] is None
+        assert [s["duration_s"] for s in doc["sessions"]] == [3000, 600]  # last 8 days
+        status, doc, _ = c.get("/api/v1/playtime?since=0")
+        assert status == 200
+        validate("playtime", doc)
+        assert len(doc["sessions"]) == 3
+        status, doc, _ = c.get("/api/v1/playtime?since=1790000000")
+        assert status == 200 and doc["sessions"] == []
+        for bad in ("abc", "", "-1", "1.5"):
+            status, doc, _ = c.get(f"/api/v1/playtime?since={bad}")
+            assert status == 400 and doc["error"] == "bad_request", bad
+            validate("error", doc)
+        assert c.post("/api/v1/playtime")[0] == 405
+    finally:
+        c.stop()
+
+
+def test_playtime_empty_and_while_resting(paired):
+    status, doc, _ = paired.get("/api/v1/playtime")
+    assert status == 200
+    validate("playtime", doc)
+    assert doc["titles"] == [] and doc["sessions"] == [] and doc["current"] is None
+    go_to_rest(paired)
+    status, doc, _ = paired.get("/api/v1/playtime")
+    assert status == 200  # stored data: no console call needed
+    validate("playtime", doc)
+
+
+def test_playtime_broken_file_set_aside(tmp_path):
+    c = Console(tmp_path, data_files={"playtime.json": '{"schema":1,"titles":{"PP'})
+    try:
+        c.pair()
+        status, doc, _ = c.get("/api/v1/playtime")
+        assert status == 200
+        validate("playtime", doc)
+        assert doc["titles"] == []
+        assert (tmp_path / "data" / "ps5-hass" / "playtime.json.bad").exists()
+        info = c.get("/api/v1/info")[1]
+        validate("info", info)
+        assert "playtime" in (info["last_error"] or "")
+    finally:
+        c.stop()
