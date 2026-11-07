@@ -13,6 +13,7 @@
 #include "config.h"
 #include "control.h"
 #include "fan.h"
+#include "limits.h"
 #include "platform_fake.h"
 #include "playtime.h"
 #include "power.h"
@@ -466,6 +467,32 @@ static void test_server_counts_playtime_when_on_only(void) {
   server_free(s);
 }
 
+/* However often the loop runs (HTTP traffic wakes it), the power state is
+ * read at most every PS5H_POWER_READ_MS. */
+static void test_power_state_read_at_most_every_250ms(void) {
+  server *s = setup(0);
+  static char buf[65536];
+  int fd;
+  fake.power_state_calls = 0;
+  for (int i = 0; i < 5; i++) { /* requests keep the loop busy */
+    fd = client(s);
+    send_str(fd, INFO);
+    T_ASSERT(read_all(s, fd, buf, sizeof(buf)) > 0);
+    close(fd);
+  }
+  T_EQ_INT(fake.power_state_calls, 0); /* same instant as the bind step */
+  fake.mono_ms += PS5H_POWER_READ_MS - 1;
+  pump(s, 10);
+  T_EQ_INT(fake.power_state_calls, 0);
+  fake.mono_ms += 1;
+  pump(s, 10);
+  T_EQ_INT(fake.power_state_calls, 1);
+  fake.mono_ms += PS5H_POWER_READ_MS;
+  pump(s, 10);
+  T_EQ_INT(fake.power_state_calls, 2);
+  server_free(s);
+}
+
 static void test_fan_tick_runs(void) {
   int rc;
   server *s = setup(0);
@@ -498,6 +525,7 @@ int main(void) {
   T_RUN(test_server_accept_error_rebinds_with_backoff);
   T_RUN(test_server_counts_playtime_when_on_only);
   T_RUN(test_fan_tick_runs);
+  T_RUN(test_power_state_read_at_most_every_250ms);
   apps_free(&apps);
   T_MAIN();
 }

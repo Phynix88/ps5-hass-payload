@@ -51,6 +51,8 @@ struct server {
   bool rebind_logged;
   int64_t last_rebind_log_ms;
   int64_t last_step_ms;
+  bool power_read; /* last_power_ms is valid */
+  int64_t last_power_ms;
   int binds;
   int fail_accept_err, fail_accept_count; /* tests */
   int64_t clock_offset_ms; /* wall - monotonic */
@@ -220,7 +222,14 @@ static void rebind(server *s, int64_t now, bool drop_conns, bool is_error,
 
 static void periodic(server *s, int64_t now) {
   int64_t off;
-  power_tick(now); /* first: every other module asks power_is_on() */
+  /* first: every other module asks power_is_on(). Requests wake the loop
+   * often, the power state is read at most every PS5H_POWER_READ_MS. */
+  if (!s->power_read || now - s->last_power_ms >= PS5H_POWER_READ_MS ||
+      now < s->last_power_ms) {
+    s->power_read = true;
+    s->last_power_ms = now;
+    power_tick(now);
+  }
   playtime_tick(s->ctx->apps, now);
   sonytime_refresh(now); /* limits itself to once an hour, only while "on" */
   info_cache_refresh();

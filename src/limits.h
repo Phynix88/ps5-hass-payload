@@ -48,6 +48,7 @@
 #define PS5H_MAX_PROCS           512 /* process names read per scan */
 #define PS5H_KEEP_AWAKE_S        240 /* keep-awake tick, below the 5 min limit */
 #define PS5H_POWER_FAIL_OPEN_S   60  /* power state unreadable this long = "on" */
+#define PS5H_POWER_READ_MS       250 /* power state read at most this often */
 #define PS5H_PLAYTIME_POLL_S     5   /* foreground sample */
 #define PS5H_PLAYTIME_FOCUS_FAILS 3  /* focus failures in a row = count "open" */
 #define PS5H_PLAYTIME_SAVE_S     60  /* checkpoint of the running session */
