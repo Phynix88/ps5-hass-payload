@@ -2,9 +2,11 @@
 
 A payload for jailbroken PS5 consoles that connects the console to your own
 [Home Assistant](https://www.home-assistant.io/). It reports what the console is doing, lists the installed games and
-apps with their names and covers, starts and closes apps, shows messages from Home Assistant on the TV and reports
-which payloads are running. If you allow it, it also puts the console into rest mode, powers it off and sets the
-temperature at which the fan speeds up.
+apps with their names and covers, starts, closes and minimises apps, shows messages from Home Assistant on the TV and
+reports which payloads are running. It counts how long each game is in the foreground and also reports the console's
+own play time, the power drawn by the console's chip and the external drives. It keeps the console awake on request,
+puts it into rest mode, powers it off, sets the temperature at which the fan speeds up and starts and stops other
+payloads through the Payload Manager.
 
 The Home Assistant side is a separate integration, [ps5-hass](https://github.com/Phynix88/ps5-hass), that only
 uses the HTTP API described in [API.md](API.md).
@@ -21,7 +23,7 @@ uses the HTTP API described in [API.md](API.md).
   0.6.3). Other firmware versions should work; functions the firmware lacks show up as `null` (see `capabilities` in
   `/api/v1/info`).
 - Home Assistant in the same local network, with the [ps5-hass integration](https://github.com/Phynix88/ps5-hass)
-  (v0.3.0 or later for Console permissions).
+  (v0.4.0 or later for the v0.4 functions).
 
 ## Installation
 
@@ -36,7 +38,7 @@ With the [Payload Manager](https://github.com/itsPLK/ps5-payload-manager) (teste
 
 Or download `ps5-hass.elf` from the [releases](https://github.com/Phynix88/ps5-hass-payload/releases) (check it
 against `SHA256SUMS`) and send it to any ELF loader (elfldr listens on port 9021). A new start replaces a running
-copy. Without an autoload you load it again after every console restart; pairings and permissions are kept in
+copy. Without an autoload you load it again after every console restart; pairings and play time are kept in
 `/data/ps5-hass/`.
 
 **Restarting the payload** (for example after editing `config.json`): load it again, from the Payload Manager or the
@@ -87,16 +89,26 @@ Everything lives in `/data/ps5-hass/` on the console (reachable via FTP, port 21
 
 | File | Content |
 |---|---|
-| `config.json` | port, pairings, `allow` (address allow list), `hosts` (extra host names), `power_actions`, `power_off`, `fan_control`, `fan_target_c`, `fan_stock_c` |
+| `config.json` | port, pairings, `allow` (address allow list), `hosts` (extra host names), `fan_target_c`, `fan_stock_c` |
 | `device_id` | random id of this console for Home Assistant; survives a reset |
+| `playtime.json` | foreground play time per title and its finished sessions (since v0.4) |
+| `app.db.copy` | read-only copy of the console's own app database, used for its play time (since v0.4); safe to delete |
 | `log.txt` | recent log, at most 64 KB together with `log.txt.1` |
 
-- **Allow rest mode, power off or the fan threshold (since v0.3):** in Home Assistant open the PS5 integration's
-  options → **Console permissions** and tick the box. The TV shows `ps5-hass: "Home Assistant" asks to allow …
-  Code: 123456`; enter the code in Home Assistant. Unticking takes a permission away at once, without a code.
-  Without Home Assistant: `POST /grant/start` and `/grant/finish` (see [API.md](API.md#permissions-since-v03)).
-- **The same over FTP:** set `"power_actions"`, `"power_off"` or `"fan_control"` to `true` in `config.json` and
-  restart the payload.
+- **Rest mode, power off, fan threshold:** a paired client can do all of them, there is nothing to allow (v0.3 asked
+  for a code on the TV for each; that is gone). The old keys `power_actions`, `power_off` and `fan_control` in
+  `config.json` are ignored and dropped the next time the file is saved.
+- **Play time:** `playtime.json` counts a title only while it is in the foreground (home screen and settings do not
+  count; the control centre keeps the game in front and does count). Delete the file and restart the payload to start
+  counting again; a broken file is set aside as `playtime.json.bad-<time>`. The console's own play time comes from a
+  copy of its app database (`app.db.copy`), read with the bundled SQLite at most once an hour and only while the
+  console is on.
+- **Minimise:** `POST /apps/running/suspend` sends the running game to the background (it stays open, paused). The
+  console then reports no running app until the game is opened again from its home screen.
+- **Keep awake:** while switched on, the payload resets the console's auto power-down timer every 4 minutes. It does
+  not stop rest mode started by a button or a request, and it is off again after a restart of the payload.
+- **Start and stop payloads:** through the Payload Manager's local interface, only when asked. kstuff, the ELF
+  loader, the Payload Manager and ps5-hass itself are protected and can be neither started nor stopped.
 - **Power off:** switching the console on again needs the power button (or the controller's PS button).
 - **Fan threshold:** the payload
   remembers the console's factory value in `fan_stock_c` (91 °C on FW 13.60) and never sets a higher one; allowed
@@ -104,9 +116,9 @@ Everything lives in `/data/ps5-hass/` on the console (reachable via FTP, port 21
   resets the value, the payload sets it again; if another tool changes it, the payload stops and reports it in
   `last_error`; setting a threshold again takes over again. To learn the factory value again, remove `fan_stock_c`
   while no threshold is set and restart the payload.
-- **Reset all pairings:** delete `config.json` and restart the payload. This also resets the permissions, port,
-  allow list, host names and fan settings. To free a single slot, delete the integration in Home Assistant while the
-  console is on.
+- **Reset all pairings:** delete `config.json` and restart the payload. This also resets the port,
+  allow list, host names and fan settings (the play time in `playtime.json` stays). To free a single slot, delete
+  the integration in Home Assistant while the console is on.
 - **Only allow certain addresses:** `"allow": ["192.168.1.0/24"]`. An invalid entry blocks everything, on purpose.
 - A broken `config.json` is set aside as `config.json.broken-<time>`; the TV shows a notice and you pair again.
 
@@ -120,9 +132,15 @@ Know these before you use it:
   (for example the ELF loader). ps5-hass does not add a way in for web pages: browser requests are refused (see
   [API.md](API.md#browser-guard)), pairing needs the code from the TV, and wrong codes lock pairing for a growing
   time.
-- Not reachable in rest mode, and it cannot wake the console. Home Assistant detects rest mode with Sony's own status
-  query. For waking from rest mode, the [PlayStation 5 integration](https://github.com/SH1FT-W/playstation-5) (Remote
-  Play pairing) can run alongside ps5-hass.
+- No permissions: pairing with the code on the TV is the only step. After that a paired client may do everything the
+  console can: rest mode, power off, the fan threshold, starting and stopping payloads. Pair only clients you trust.
+  A client's slot is freed by deleting the integration in Home Assistant; all pairings by deleting `config.json`.
+- **Rest mode:** the payload cannot wake the console and is normally not reachable while it rests. Outside the power
+  state "on" (rest mode, going to rest, shutting down) it makes no console calls: requests that would need one answer
+  `409 not_on`, and `/state` shows only what it has in memory. Home Assistant detects rest mode with Sony's own
+  status query. For waking from rest mode, the
+  [PlayStation 5 integration](https://github.com/SH1FT-W/playstation-5) (Remote Play pairing) can run alongside
+  ps5-hass.
 - PS4 titles (`CUSA…`) are listed with their title id as name; untested.
 - No controller input, no screenshots, no controller battery (the console refuses pad access from a payload).
 - Messages on the TV: at most 200 bytes, 5 per 30 seconds.

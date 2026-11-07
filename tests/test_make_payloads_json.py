@@ -35,7 +35,8 @@ def test_fields_and_checksum(tmp_path):
     assert p["category"] == "Networking"
     assert p["details_url"] == "https://github.com/Phynix88/ps5-hass-payload#readme"
     assert p["source"] == "https://github.com/Phynix88/ps5-hass-payload"
-    for words in ("Home Assistant", "messages on the TV", "power off", "fan threshold"):
+    for words in ("Home Assistant", "messages on the TV", "power off", "fan threshold",
+                  "minimise", "play time", "keep awake", "start and stop payloads"):
         assert words in p["description"]
 
 

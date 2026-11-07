@@ -38,9 +38,10 @@ def main():
                 "filename": "ps5-hass.elf",
                 "url": f"{base}/releases/download/{a.version}/ps5-hass.elf",
                 "description": "Connects the console to Home Assistant (HACS integration "
-                               "ps5-hass): state, apps with covers, launch and close apps, "
-                               "messages on the TV, rest mode, power off, fan threshold. "
-                               "Pair with a code shown on the TV.",
+                               "ps5-hass): state, apps with covers, launch, close and "
+                               "minimise apps, play time, messages on the TV, keep awake, "
+                               "rest mode, power off, fan threshold, start and stop "
+                               "payloads. Pair with a code shown on the TV.",
                 "version": a.version,
                 "last_update": date,
                 "category": "Networking",
