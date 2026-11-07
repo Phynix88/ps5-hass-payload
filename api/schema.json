@@ -113,6 +113,9 @@
             },
             "playtime": {
               "type": "boolean"
+            },
+            "payload_control": {
+              "type": "boolean"
             }
           },
           "required": [
@@ -130,7 +133,8 @@
             "suspend",
             "keep_awake",
             "soc_power",
-            "playtime"
+            "playtime",
+            "payload_control"
           ],
           "additionalProperties": false
         },
@@ -532,7 +536,11 @@
             "internal",
             "fan_above_stock",
             "not_available",
-            "already_allowed"
+            "already_allowed",
+            "protected",
+            "already_running",
+            "unknown_payload",
+            "payload_manager_unavailable"
           ]
         },
         "message": {
@@ -789,6 +797,52 @@
         "titles",
         "sessions",
         "current"
+      ],
+      "additionalProperties": false
+    },
+    "payloads": {
+      "type": "object",
+      "properties": {
+        "result": {
+          "const": "ok"
+        },
+        "available": {
+          "type": "boolean"
+        },
+        "payloads": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "slot": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              "name": {
+                "type": "string"
+              },
+              "running": {
+                "type": "boolean"
+              },
+              "protected": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "slot",
+              "name",
+              "running",
+              "protected"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "result",
+        "available",
+        "payloads"
       ],
       "additionalProperties": false
     }

@@ -13,6 +13,7 @@
 #include "limits.h"
 #include "platform_fake.h"
 #include "playtime.h"
+#include "pldmgr.h"
 #include "power.h"
 #include "router.h"
 #include "state.h"
@@ -45,6 +46,7 @@ static void setup(void) {
   ctx.apps = &apps;
   ctx.device_id = "00112233445566778899aabbccddeeff";
   token[0] = '\0';
+  pldmgr_set_target("127.0.0.1", 1); /* nothing listens there */
 }
 
 /* Sends one request; returns the status, the JSON body is in `body`. */
@@ -598,6 +600,8 @@ static void test_gated_routes_refuse_outside_on(void) {
       {"POST", "/api/v1/notify", "{\"message\":\"x\"}"},
       {"POST", "/api/v1/fan", "{\"threshold_c\":70}"},
       {"POST", "/api/v1/keep_awake", "{\"on\":true}"},
+      {"POST", "/api/v1/payloads/start", "{\"slot\":\"repo/ftpsrv@e8cce5d1\"}"},
+      {"POST", "/api/v1/payloads/stop", "{\"slot\":\"repo/ftpsrv@e8cce5d1\"}"},
       {"POST", "/api/v1/pair/start", "{}"},
       {"POST", "/api/v1/pair/finish",
        "{\"code\":\"123456\",\"client_id\":\"0b7e2f1c-1111-4222-8333-944445555666\","
@@ -618,6 +622,45 @@ static void test_gated_routes_refuse_outside_on(void) {
     T_EQ_INT(fake.notify_count, 0);
     T_ASSERT(!power_keep_awake());
   }
+}
+
+static void test_payloads_unavailable_without_manager(void) {
+  setup();
+  T_EQ_INT(call("GET", "/api/v1/payloads", NULL), 401);
+  pair();
+  T_EQ_INT(call("GET", "/api/v1/payloads", NULL), 200);
+  T_ASSERT(strstr(body, "\"available\":false"));
+  T_ASSERT(strstr(body, "\"payloads\":[]"));
+  T_EQ_INT(call("POST", "/api/v1/payloads/start", "{\"slot\":\"repo/ftpsrv@e8cce5d1\"}"), 503);
+  T_ASSERT(strstr(body, "\"error\":\"payload_manager_unavailable\""));
+  T_EQ_INT(call("POST", "/api/v1/payloads/stop", "{\"slot\":\"repo/ftpsrv@e8cce5d1\"}"), 503);
+  T_EQ_INT(call("POST", "/api/v1/payloads/stop", "{}"), 400);
+  T_EQ_INT(call("POST", "/api/v1/payloads/stop", "{\"slot\":5}"), 400);
+  T_EQ_INT(call("POST", "/api/v1/payloads/stop", "{\"slot\":\"\"}"), 400);
+  T_EQ_INT(call("POST", "/api/v1/payloads", "{}"), 405);
+  T_EQ_INT(call("GET", "/api/v1/payloads/start", NULL), 405);
+  T_EQ_INT(call("GET", "/api/v1/info", NULL), 200);
+  T_ASSERT(strstr(body, "\"payload_control\":false"));
+}
+
+static void test_payloads_protected_is_403_without_contact(void) {
+  setup();
+  pair();
+  /* the manager is unreachable, yet a protected slot is answered 403 (not 503) */
+  T_EQ_INT(call("POST", "/api/v1/payloads/start", "{\"slot\":\"repo/kstuff@44444444\"}"), 403);
+  T_ASSERT(strstr(body, "\"error\":\"protected\""));
+  T_EQ_INT(call("POST", "/api/v1/payloads/stop", "{\"slot\":\"repo/etaHEN@55555555\"}"), 403);
+  T_EQ_INT(call("POST", "/api/v1/payloads/start", "{\"slot\":\"local/ps5-hass.elf\"}"), 403);
+}
+
+static void test_payloads_outside_on_leave_manager_alone(void) {
+  setup();
+  pair();
+  rest(500);
+  fake.reads = fake.sony_calls = 0;
+  T_EQ_INT(call("GET", "/api/v1/payloads", NULL), 200);
+  T_ASSERT(strstr(body, "\"available\":false"));
+  T_EQ_INT(fake.sony_calls, 0);
 }
 
 static void test_unauthenticated_pair_refused_outside_on(void) {
@@ -807,6 +850,9 @@ int main(void) {
   T_RUN(test_state_has_power_state);
   T_RUN(test_state_outside_on_leaves_console_alone);
   T_RUN(test_gated_routes_refuse_outside_on);
+  T_RUN(test_payloads_unavailable_without_manager);
+  T_RUN(test_payloads_protected_is_403_without_contact);
+  T_RUN(test_payloads_outside_on_leave_manager_alone);
   T_RUN(test_unauthenticated_pair_refused_outside_on);
   T_RUN(test_keep_awake_off_and_reads_work_outside_on);
   T_RUN(test_info_outside_on_makes_no_console_call);

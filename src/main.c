@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later */
 #include <signal.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "apps.h"
@@ -17,6 +18,7 @@
 #include "power.h"
 #include "router.h"
 #include "server.h"
+#include "pldmgr.h"
 #include "state.h"
 
 #ifdef PS5H_HOST
@@ -43,6 +45,9 @@ int main(void) {
 
 #ifdef PS5H_HOST
   fake_init_from_env();
+  if (getenv("PS5HASS_PLDMGR_PORT")) { /* e2e tests: a stand-in Payload Manager */
+    pldmgr_set_target("127.0.0.1", (uint16_t)atoi(getenv("PS5HASS_PLDMGR_PORT")));
+  }
 #endif
   signal(SIGPIPE, SIG_IGN);
   signal(SIGTERM, on_signal);

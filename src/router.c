@@ -3,8 +3,10 @@
 
 #include <arpa/inet.h>
 #include <sys/socket.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 #include <sys/stat.h>
@@ -19,6 +21,7 @@
 #include "perm.h"
 #include "platform.h"
 #include "playtime.h"
+#include "pldmgr.h"
 #include "power.h"
 #include "state.h"
 
@@ -212,6 +215,9 @@ typedef enum {
   R_FAN,
   R_KEEP_AWAKE,
   R_PLAYTIME,
+  R_PAYLOADS,
+  R_PAYLOAD_START,
+  R_PAYLOAD_STOP,
   R_GRANT_START,
   R_GRANT_FINISH,
   R_GRANT_REVOKE
@@ -239,6 +245,9 @@ static route_id match(const char *path, http_method *want, char *id,
       {PREFIX "/fan", HM_POST, R_FAN},
       {PREFIX "/keep_awake", HM_POST, R_KEEP_AWAKE},
       {PREFIX "/playtime", HM_GET, R_PLAYTIME},
+      {PREFIX "/payloads", HM_GET, R_PAYLOADS},
+      {PREFIX "/payloads/start", HM_POST, R_PAYLOAD_START},
+      {PREFIX "/payloads/stop", HM_POST, R_PAYLOAD_STOP},
       {PREFIX "/grant/start", HM_POST, R_GRANT_START},
       {PREFIX "/grant/finish", HM_POST, R_GRANT_FINISH},
       {PREFIX "/grant/revoke", HM_POST, R_GRANT_REVOKE},
@@ -294,6 +303,8 @@ static bool needs_console(route_id r) {
   case R_NOTIFY:
   case R_POWER_OFF:
   case R_FAN:
+  case R_PAYLOAD_START: /* not a Sony call, but not while it falls asleep */
+  case R_PAYLOAD_STOP:
     return true;
   default:
     return false;
@@ -680,6 +691,76 @@ static void h_playtime(route_ctx *ctx, const http_req *req, route_resp *out) {
   done(out);
 }
 
+/* Never contacts the Payload Manager outside "on": the console may be
+ * freezing processes then. */
+static void h_payloads(route_resp *out) {
+  pld_entry *list = NULL;
+  int n = 0;
+  jw_t *w;
+  if (power_is_on()) {
+    list = malloc(PS5H_PLDMGR_MAX_ENTRIES * sizeof(*list));
+    if (!list) {
+      fail(out, 500, "internal", "out of memory");
+      return;
+    }
+    n = pldmgr_list(list, PS5H_PLDMGR_MAX_ENTRIES);
+  }
+  w = ok(out);
+  jw_key(w, "available");
+  jw_bool(w, n >= 0 && list);
+  jw_key(w, "payloads");
+  jw_arr(w);
+  for (int i = 0; i < n; i++) {
+    jw_obj(w);
+    jw_key(w, "slot");
+    jw_cstr(w, list[i].slot);
+    jw_key(w, "name");
+    jw_cstr(w, list[i].name);
+    jw_key(w, "running");
+    jw_bool(w, list[i].running);
+    jw_key(w, "protected");
+    jw_bool(w, list[i].protected_);
+    jw_end_obj(w);
+  }
+  jw_end_arr(w);
+  done(out);
+  free(list);
+}
+
+static void h_payload_action(const jr_t *r, bool start, route_resp *out) {
+  char slot[256];
+  int rc;
+  if (!jr_string(r, jr_get(r, 0, "slot"), slot, sizeof(slot)) || !slot[0]) {
+    fail(out, 400, "bad_request", "slot must be a non-empty string");
+    return;
+  }
+  rc = start ? pldmgr_start(slot) : pldmgr_stop(slot);
+  switch (rc) {
+  case 0:
+    ok(out);
+    done(out);
+    return;
+  case -EPERM:
+    fail(out, 403, "protected", "this payload is never started or stopped here");
+    return;
+  case -EEXIST:
+    fail(out, 409, "already_running", "the payload is already running");
+    return;
+  case -ENOENT:
+    fail(out, 409, "not_running", "the payload is not running");
+    return;
+  case -ESRCH:
+    fail(out, 404, "unknown_payload", "no such payload slot");
+    return;
+  case -EINVAL:
+    fail(out, 400, "bad_request", "slot is not valid");
+    return;
+  default:
+    fail(out, 503, "payload_manager_unavailable",
+         "the Payload Manager does not answer correctly");
+  }
+}
+
 static void h_power_off(route_ctx *ctx, route_resp *out) {
   int rc = 0;
   switch (control_power_off(ctx->cfg, &rc)) {
@@ -824,6 +905,9 @@ void route(route_ctx *ctx, const http_req *req, uint32_t peer,
   case R_FAN: h_fan(ctx, &body, out); break;
   case R_KEEP_AWAKE: h_keep_awake(&body, out); break;
   case R_PLAYTIME: h_playtime(ctx, req, out); break;
+  case R_PAYLOADS: h_payloads(out); break;
+  case R_PAYLOAD_START: h_payload_action(&body, true, out); break;
+  case R_PAYLOAD_STOP: h_payload_action(&body, false, out); break;
   case R_GRANT_START: h_grant_start(out); break;
   case R_GRANT_FINISH: h_grant_finish(out); break;
   case R_GRANT_REVOKE: h_grant_revoke(out); break;

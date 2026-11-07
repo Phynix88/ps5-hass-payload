@@ -56,7 +56,7 @@ There are no CORS headers.
 
 | Method and path | Token | Answer |
 |---|---|---|
-| `GET /info` | no | `name`, `version`, `commit`, `api` (1), `device_id`, `model`, `firmware`, `paired`, `power_actions` (`true` when the console can enter rest mode), `config` (`ok`/`recovered`), `capabilities{temps,fan,notify,random,launch,standby,mdns,power_off,fan_control,focus,power_state,suspend,keep_awake,soc_power,playtime}`, `permissions{power_actions,power_off,fan_control}` (each `{allowed,available}`; kept for v0.3 clients, `allowed` always equals `available`), `last_error` |
+| `GET /info` | no | `name`, `version`, `commit`, `api` (1), `device_id`, `model`, `firmware`, `paired`, `power_actions` (`true` when the console can enter rest mode), `config` (`ok`/`recovered`), `capabilities{temps,fan,notify,random,launch,standby,mdns,power_off,fan_control,focus,power_state,suspend,keep_awake,soc_power,playtime,payload_control}`, `permissions{power_actions,power_off,fan_control}` (each `{allowed,available}`; kept for v0.3 clients, `allowed` always equals `available`), `last_error` |
 | `POST /pair/start` | no | `{"expires_in":120}` |
 | `POST /pair/finish` | no | `{"token":"<64 hex>"}` |
 | `POST /pair/revoke` | yes | `{}` |
@@ -72,6 +72,9 @@ There are no CORS headers.
 | `POST /fan` | yes | body `{"threshold_c":70}` (45..85) or `{"threshold_c":0}` (back to the console's own value); answer `{"fan":{…}}` (since v0.2) |
 | `POST /keep_awake` | yes | body `{"on":true}`; answer `{"keep_awake":true}`. While on, the payload resets the console's auto power-down timer every 240 s. Without `capabilities.keep_awake`: `409 not_available`. The setting lives in memory only (off after a payload restart) and does not stop rest mode started by a button or a request (since v0.4) |
 | `GET /playtime` | yes | `?since=<unix seconds>` (default: now minus 8 days; not a number of 1 to 11 digits: `400 bad_request`). Play time per title, see [Play time](#play-time-since-v04) (since v0.4) |
+| `GET /payloads` | yes | the payloads the Payload Manager has installed: `{"available":true,"payloads":[{"slot","name","running","protected"}]}`, see [Payloads](#payloads-since-v04). Payload Manager not reachable, or the console not `on`: `available` false and an empty list (since v0.4) |
+| `POST /payloads/start` | yes | body `{"slot":"repo/ftpsrv@e8cce5d1"}`: starts that payload. `409 already_running`, `403 protected`, `404 unknown_payload`, `503 payload_manager_unavailable`; outside `on`: `409 not_on` (since v0.4) |
+| `POST /payloads/stop` | yes | body `{"slot":"…"}`: stops it (kills its process). `409 not_running`, `403 protected`, `404 unknown_payload`, `503 payload_manager_unavailable`; outside `on`: `409 not_on` (since v0.4) |
 | `POST /grant/start` | yes | compatibility only: always `409 already_allowed` (see [Permissions](#permissions-removed-in-v04)) |
 | `POST /grant/finish` | yes | compatibility only: always `409 no_code` |
 | `POST /grant/revoke` | yes | compatibility only: `200` with `{"permissions":{…}}`, nothing is revoked |
@@ -124,8 +127,8 @@ Success answers carry `"result":"ok"`. `<ID>` must match `^[A-Z]{4}[0-9]{5}$`.
 
 While `power_state` is not `on`, requests that would call a console function are refused with
 `409 not_on`: `POST /apps/<ID>/launch`, `/apps/running/close`, `/apps/running/suspend`, `/power/standby`, `/power/off`, `/notify`, `/fan`,
-`/pair/start`, `/pair/finish` (pairing shows its code on the TV) and `/keep_awake` with `{"on":true}`. Switching
-keep-awake off is always allowed. `GET /info`, `/state`, `/apps` and `/playtime` keep working without any console call: `/info`
+`/payloads/start`, `/payloads/stop`, `/pair/start`, `/pair/finish` (pairing shows its code on the TV) and `/keep_awake` with `{"on":true}`. Switching
+keep-awake off is always allowed. `GET /info`, `/state`, `/apps`, `/playtime` and `/payloads` (which then reports `available` false) keep working without any console call: `/info`
 shows `model` and `firmware` as read while the console was `on` (empty strings if that has not happened yet),
 `/apps` the last list, `GET /playtime` serves what is stored. A client that wants to act on a console in rest mode wakes it first (for example with the
 PlayStation 5 integration) and retries. The payload's own notice about a busy port is skipped outside `on` and
@@ -168,6 +171,27 @@ console, so the count survives restarts of the payload and has no gaps while Hom
   `playtime.json.bad-<unix time>` (a second one never replaces the first), `last_error` says so, and counting starts
   again. A file that merely cannot be read right now (out of memory, no file handle) is left alone: nothing is written
   until a later attempt reads it, and what was counted meanwhile is added to it then.
+
+### Payloads (since v0.4)
+
+The payload starts and stops other payloads through the Payload Manager (its HTTP interface on `127.0.0.1:8084`,
+the same one its web page uses). It talks to it only when asked, never in the background.
+
+- `slot` is the Payload Manager's own key (for example `repo/ftpsrv@e8cce5d1`); use the value from `GET /payloads`.
+  `name` is the Payload Manager's name for it, else its id, else the file name without extension and version.
+- `running` is true when a process of that payload exists. A process counts when its name (without `.elf`,
+  case-insensitive, first 19 characters) equals the payload's id or its file name without extension and without a
+  trailing version part (from the last `_` when a digit or `v` and a digit follows). If the same payload is
+  running several times, `stop` ends the first process found.
+- `protected` is true for anything whose slot, id, file name, name or process name contains `kstuff`, `etahen`,
+  `elfldr`, `pldmgr` or `ps5-hass` (case-insensitive). Such a payload is listed but never started or stopped
+  (`403 protected`; the Payload Manager is not even asked), so the payload cannot switch off kstuff, the loader, the
+  Payload Manager or itself.
+- The Payload Manager must answer within 2 s (list, then action) with at most 256 KB of JSON; anything else counts as not
+  reachable. `capabilities.payload_control` in `/info` is true when the last such call worked (false until the
+  first one).
+- Outside `on` the payload does not contact the Payload Manager at all (the console may be freezing processes):
+  `GET /payloads` answers `available` false, start and stop `409 not_on`.
 
 ### Fan threshold (since v0.2)
 
@@ -230,15 +254,16 @@ fields and endpoints go away in a later version.
 |---|---|---|
 | 400 | `bad_request`, `bad_title_id` | |
 | 401 | `unauthorized` (token missing or wrong), `wrong_code` | `attempts_left` for `wrong_code` |
-| 403 | `origin_forbidden`, `browser_guard`, `host_forbidden`, `address_forbidden` | |
-| 404 | `not_found`, `not_installed` | |
+| 403 | `origin_forbidden`, `browser_guard`, `host_forbidden`, `address_forbidden`, `protected` | |
+| 404 | `not_found`, `not_installed`, `unknown_payload` | |
 | 405 | `method_not_allowed` | |
-| 409 | `no_code`, `code_exhausted`, `token_limit`, `other_app_running`, `no_user`, `title_mismatch`, `no_app`, `not_running`, `fan_above_stock`, `not_available`, `already_allowed`, `not_on` | |
+| 409 | `no_code`, `code_exhausted`, `token_limit`, `other_app_running`, `no_user`, `title_mismatch`, `no_app`, `not_running`, `fan_above_stock`, `not_available`, `already_allowed`, `not_on`, `already_running` | |
 | 411 | `length_required` (chunked body, or `POST` without `Content-Length`) | |
 | 413 | `body_too_large` (more than 4096 bytes) | |
 | 429 | `locked`, `rate_limited` | `retry_after` (seconds) |
 | 431 | `headers_too_large` (more than 8 KB) | |
 | 500 | `notify_failed`, `random_unavailable`, `system_error`, `internal` | `rc`, `rc_hex` for `system_error` |
+| 503 | `payload_manager_unavailable` | |
 
 `rc` is the console's return code (for example `-2137784315`), `rc_hex` the same as `0x80940005`.
 

@@ -62,6 +62,11 @@
 #define PS5H_SOC_POWER_CACHE_S   10   /* SoC power is re-read at most this often */
 #define PS5H_DRIVES_CACHE_S      60   /* external drives, same */
 #define PS5H_DRIVE_MIN_MB        1024 /* smaller = a mount point without a drive */
+#define PS5H_PLDMGR_PORT         8084      /* Payload Manager, on this console */
+#define PS5H_PLDMGR_TIMEOUT_MS   2000      /* per phase: list, then action */
+#define PS5H_PLDMGR_MAX_ANSWER   (256 * 1024)
+#define PS5H_PLDMGR_MAX_TOKENS   8192      /* JSON tokens per answer */
+#define PS5H_PLDMGR_MAX_ENTRIES  128       /* payloads in one list */
 #define PS5H_DATA_DIR            "/data/ps5-hass"
 
 #endif

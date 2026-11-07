@@ -10,6 +10,7 @@
 #include "log.h"
 #include "perm.h"
 #include "platform.h"
+#include "pldmgr.h"
 #include "power.h"
 
 #ifndef PS5H_VERSION
@@ -304,6 +305,8 @@ void info_json(jw_t *w, const config *c, const char *device_id,
   jw_bool(w, caps.soc_power);
   jw_key(w, "playtime");
   jw_bool(w, true);
+  jw_key(w, "payload_control"); /* the last list call worked */
+  jw_bool(w, pldmgr_last_ok());
   jw_end_obj(w);
   perm_json(w);
   jw_key(w, "last_error");

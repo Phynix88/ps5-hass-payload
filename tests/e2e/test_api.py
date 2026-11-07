@@ -9,7 +9,9 @@ import pathlib
 import shutil
 import socket
 import subprocess
+import threading
 import time
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import jsonschema
 import pytest
@@ -514,3 +516,136 @@ def test_playtime_broken_file_set_aside(tmp_path):
         assert "playtime" in (info["last_error"] or "")
     finally:
         c.stop()
+
+
+def test_payloads_unavailable_without_pldmgr(tmp_path):
+    # a port nothing listens on (bound, never listening, so nobody else gets it):
+    # the payload must answer fast and say so
+    closed = socket.socket()
+    closed.bind(("127.0.0.1", 0))
+    c = Console(tmp_path, env_extra={"PS5HASS_PLDMGR_PORT": str(closed.getsockname()[1])})
+    try:
+        c.pair()
+        assert c.get("/api/v1/info")[1]["capabilities"]["payload_control"] is False
+        started = time.time()
+        status, doc, _ = c.get("/api/v1/payloads")
+        assert time.time() - started < 2.5
+        assert status == 200
+        validate("payloads", doc)
+        assert doc["available"] is False and doc["payloads"] == []
+        status, doc, _ = c.post("/api/v1/payloads/start", {"slot": "repo/ftpsrv@e8cce5d1"})
+        assert status == 503 and doc["error"] == "payload_manager_unavailable"
+        validate("error", doc)
+        status, doc, _ = c.post("/api/v1/payloads/stop", {"slot": "repo/ftpsrv@e8cce5d1"})
+        assert status == 503
+        status, doc, _ = c.post("/api/v1/payloads/start", {"slot": "repo/kstuff@44444444"})
+        assert status == 403 and doc["error"] == "protected"
+        validate("error", doc)
+        for body in ({}, {"slot": 5}, {"slot": ""}):
+            status, doc, _ = c.post("/api/v1/payloads/start", body)
+            assert status == 400 and doc["error"] == "bad_request", body
+        assert c.get("/api/v1/info")[1]["capabilities"]["payload_control"] is False
+    finally:
+        c.stop()
+        closed.close()
+
+
+class StandInManager(BaseHTTPRequestHandler):
+    """Just enough of the Payload Manager's HTTP interface."""
+
+    seen = []
+    items = [
+        {"slot": "repo/ftpsrv@e8cce5d1", "kind": "repo", "filename": "ftpsrv_v0.21.1.elf",
+         "id": "ftpsrv", "name": "FTP Server"},
+        {"slot": "repo/websrv@11111111", "kind": "repo", "filename": "websrv_v0.34.elf",
+         "id": "websrv"},
+        {"slot": "repo/kstuff@44444444", "kind": "repo", "filename": "kstuff-lite_v1.11.elf",
+         "id": "kstuff"},
+    ]
+    procs = [{"pid": 97, "name": "ftpsrv.elf"}, {"pid": 99, "name": "kstuff.elf"}]
+
+    def _send(self, doc):
+        raw = json.dumps(doc).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+
+    def do_GET(self):
+        self.seen.append(("GET", self.path, self.headers.get("X-PLDMGR-Request")))
+        if self.path == "/list_payloads":
+            self._send({"items": self.items, "usb": [], "payloads": []})
+        elif self.path == "/processes_list":
+            self._send({"processes": self.procs})
+        else:
+            self.send_error(404)
+
+    def do_POST(self):
+        self.seen.append(("POST", self.path, self.headers.get("X-PLDMGR-Request")))
+        self._send({"ok": True})
+
+    def log_message(self, *args):
+        pass
+
+
+def test_payloads_list_start_stop_with_stand_in(tmp_path):
+    StandInManager.seen = []
+    manager = HTTPServer(("127.0.0.1", 0), StandInManager)
+    threading.Thread(target=manager.serve_forever, daemon=True).start()
+    c = Console(tmp_path, env_extra={"PS5HASS_PLDMGR_PORT": str(manager.server_port)})
+    try:
+        c.pair()
+        status, doc, _ = c.get("/api/v1/payloads")
+        assert status == 200
+        validate("payloads", doc)
+        assert doc["available"] is True
+        by_slot = {p["slot"]: p for p in doc["payloads"]}
+        assert by_slot["repo/ftpsrv@e8cce5d1"] == {
+            "slot": "repo/ftpsrv@e8cce5d1", "name": "FTP Server", "running": True, "protected": False}
+        assert by_slot["repo/websrv@11111111"]["running"] is False
+        assert by_slot["repo/websrv@11111111"]["name"] == "websrv"
+        assert by_slot["repo/kstuff@44444444"]["protected"] is True
+        info = c.get("/api/v1/info")[1]
+        validate("info", info)
+        assert info["capabilities"]["payload_control"] is True
+
+        status, doc, _ = c.post("/api/v1/payloads/start", {"slot": "repo/ftpsrv@e8cce5d1"})
+        assert status == 409 and doc["error"] == "already_running"
+        validate("error", doc)
+        status, doc, _ = c.post("/api/v1/payloads/stop", {"slot": "repo/websrv@11111111"})
+        assert status == 409 and doc["error"] == "not_running"
+        status, doc, _ = c.post("/api/v1/payloads/start", {"slot": "repo/nope@0"})
+        assert status == 404 and doc["error"] == "unknown_payload"
+        validate("error", doc)
+        assert not [s for s in StandInManager.seen if s[0] == "POST"]
+
+        status, doc, _ = c.post("/api/v1/payloads/start", {"slot": "repo/websrv@11111111"})
+        assert status == 200
+        validate("ok", doc)
+        status, doc, _ = c.post("/api/v1/payloads/stop", {"slot": "repo/ftpsrv@e8cce5d1"})
+        assert status == 200
+        posts = [s for s in StandInManager.seen if s[0] == "POST"]
+        assert posts == [("POST", "/loadpayload:repo/websrv%4011111111", "1"),
+                         ("POST", "/process_kill?pid=97", "1")]
+
+        for slot in ("repo/kstuff@44444444", "kstuff"):
+            before = len(StandInManager.seen)
+            status, doc, _ = c.post("/api/v1/payloads/stop", {"slot": slot})
+            assert status == 403 and doc["error"] == "protected"
+            assert len(StandInManager.seen) == before  # protected: no request
+
+        # outside "on" nothing reaches the Payload Manager
+        go_to_rest(c)
+        before = len(StandInManager.seen)
+        status, doc, _ = c.get("/api/v1/payloads")
+        assert status == 200 and doc["available"] is False and doc["payloads"] == []
+        validate("payloads", doc)
+        for path in ("start", "stop"):
+            status, doc, _ = c.post(f"/api/v1/payloads/{path}", {"slot": "repo/websrv@11111111"})
+            assert status == 409 and doc["error"] == "not_on"
+        assert len(StandInManager.seen) == before
+    finally:
+        c.stop()
+        manager.shutdown()
+        manager.server_close()

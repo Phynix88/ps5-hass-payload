@@ -123,7 +123,7 @@ static void test_info_fields_and_capabilities(void) {
                      "\"fan_control\":true,\"focus\":true,"
                      "\"power_state\":true,\"suspend\":true,"
                      "\"keep_awake\":true,\"soc_power\":true,"
-                     "\"playtime\":true}"));
+                     "\"playtime\":true,\"payload_control\":false}"));
   T_ASSERT(strstr(s, "\"last_error\":"));
 }
 
