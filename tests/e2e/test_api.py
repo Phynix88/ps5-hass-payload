@@ -34,6 +34,17 @@ def free_port():
         return s.getsockname()[1]
 
 
+LIVE = []  # host servers that are still running
+
+
+@pytest.fixture(autouse=True)
+def no_leaked_host_servers():
+    """Whatever a test (or a failed start) leaves running is stopped here."""
+    yield
+    for c in list(LIVE):
+        c.stop()
+
+
 class Console:
     """A running ps5-hass-host with its own fake root."""
 
@@ -49,9 +60,19 @@ class Console:
             (tmp / "data" / "ps5-hass" / name).write_text(text)
         env = dict(os.environ, PS5HASS_ROOT=str(tmp), **(env_extra or {}))
         self.proc = subprocess.Popen([str(HOST_BIN)], env=env)
+        LIVE.append(self)
         self.token = None
-        deadline = time.time() + 10
+        try:
+            self._wait_until_up()
+        except BaseException:
+            self.stop()  # never leave a host server behind
+            raise
+
+    def _wait_until_up(self):
+        deadline = time.time() + 30  # slow machines: ASan start under load
         while time.time() < deadline:
+            if self.proc.poll() is not None:
+                raise RuntimeError("host server exited during start")
             try:
                 if self.get("/api/v1/info")[0] == 200:
                     return
@@ -60,8 +81,16 @@ class Console:
         raise RuntimeError("host server did not start")
 
     def stop(self):
-        self.proc.terminate()
-        self.proc.wait(timeout=5)
+        """Safe to call twice and after a failed start."""
+        if self in LIVE:
+            LIVE.remove(self)
+        if self.proc.poll() is None:
+            self.proc.terminate()
+            try:
+                self.proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self.proc.kill()
+                self.proc.wait()
 
     def request(self, method, path, body=None, headers=None, guard=True):
         conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
@@ -522,9 +551,10 @@ def test_payloads_unavailable_without_pldmgr(tmp_path):
     # a port nothing listens on (bound, never listening, so nobody else gets it):
     # the payload must answer fast and say so
     closed = socket.socket()
-    closed.bind(("127.0.0.1", 0))
-    c = Console(tmp_path, env_extra={"PS5HASS_PLDMGR_PORT": str(closed.getsockname()[1])})
+    c = None
     try:
+        closed.bind(("127.0.0.1", 0))
+        c = Console(tmp_path, env_extra={"PS5HASS_PLDMGR_PORT": str(closed.getsockname()[1])})
         c.pair()
         assert c.get("/api/v1/info")[1]["capabilities"]["payload_control"] is False
         started = time.time()
@@ -546,7 +576,8 @@ def test_payloads_unavailable_without_pldmgr(tmp_path):
             assert status == 400 and doc["error"] == "bad_request", body
         assert c.get("/api/v1/info")[1]["capabilities"]["payload_control"] is False
     finally:
-        c.stop()
+        if c:
+            c.stop()
         closed.close()
 
 
@@ -556,7 +587,7 @@ class StandInManager(BaseHTTPRequestHandler):
     seen = []
     items = [
         {"slot": "repo/ftpsrv@e8cce5d1", "kind": "repo", "filename": "ftpsrv_v0.21.1.elf",
-         "id": "ftpsrv", "name": "FTP Server"},
+         "id": "ftpsrv", "name": "FTP Server", "version": "v0.21.1"},
         {"slot": "repo/websrv@11111111", "kind": "repo", "filename": "websrv_v0.34.elf",
          "id": "websrv"},
         {"slot": "repo/kstuff@44444444", "kind": "repo", "filename": "kstuff-lite_v1.11.elf",
@@ -593,8 +624,9 @@ def test_payloads_list_start_stop_with_stand_in(tmp_path):
     StandInManager.seen = []
     manager = HTTPServer(("127.0.0.1", 0), StandInManager)
     threading.Thread(target=manager.serve_forever, daemon=True).start()
-    c = Console(tmp_path, env_extra={"PS5HASS_PLDMGR_PORT": str(manager.server_port)})
+    c = None
     try:
+        c = Console(tmp_path, env_extra={"PS5HASS_PLDMGR_PORT": str(manager.server_port)})
         c.pair()
         status, doc, _ = c.get("/api/v1/payloads")
         assert status == 200
@@ -602,7 +634,8 @@ def test_payloads_list_start_stop_with_stand_in(tmp_path):
         assert doc["available"] is True
         by_slot = {p["slot"]: p for p in doc["payloads"]}
         assert by_slot["repo/ftpsrv@e8cce5d1"] == {
-            "slot": "repo/ftpsrv@e8cce5d1", "name": "FTP Server", "running": True, "protected": False}
+            "slot": "repo/ftpsrv@e8cce5d1", "name": "FTP Server", "version": "v0.21.1",
+            "running": True, "protected": False}
         assert by_slot["repo/websrv@11111111"]["running"] is False
         assert by_slot["repo/websrv@11111111"]["name"] == "websrv"
         assert by_slot["repo/kstuff@44444444"]["protected"] is True
@@ -646,6 +679,7 @@ def test_payloads_list_start_stop_with_stand_in(tmp_path):
             assert status == 409 and doc["error"] == "not_on"
         assert len(StandInManager.seen) == before
     finally:
-        c.stop()
+        if c:
+            c.stop()
         manager.shutdown()
         manager.server_close()

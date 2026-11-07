@@ -72,7 +72,7 @@ There are no CORS headers.
 | `POST /fan` | yes | body `{"threshold_c":70}` (45..85) or `{"threshold_c":0}` (back to the console's own value); answer `{"fan":{…}}` (since v0.2) |
 | `POST /keep_awake` | yes | body `{"on":true}`; answer `{"keep_awake":true}`. While on, the payload resets the console's auto power-down timer every 240 s. Without `capabilities.keep_awake`: `409 not_available`. The setting lives in memory only (off after a payload restart) and does not stop rest mode started by a button or a request (since v0.4) |
 | `GET /playtime` | yes | `?since=<unix seconds>` (default: now minus 8 days; not a number of 1 to 11 digits: `400 bad_request`). Play time per title, see [Play time](#play-time-since-v04) (since v0.4) |
-| `GET /payloads` | yes | the payloads the Payload Manager has installed: `{"available":true,"payloads":[{"slot","name","running","protected"}]}`, see [Payloads](#payloads-since-v04). Payload Manager not reachable, or the console not `on`: `available` false and an empty list (since v0.4) |
+| `GET /payloads` | yes | the payloads the Payload Manager has installed: `{"available":true,"payloads":[{"slot","name","version","running","protected"}]}`, see [Payloads](#payloads-since-v04). Payload Manager not reachable, or the console not `on`: `available` false and an empty list (since v0.4) |
 | `POST /payloads/start` | yes | body `{"slot":"repo/ftpsrv@e8cce5d1"}`: starts that payload. `409 already_running`, `403 protected`, `404 unknown_payload`, `503 payload_manager_unavailable`; outside `on`: `409 not_on` (since v0.4) |
 | `POST /payloads/stop` | yes | body `{"slot":"…"}`: stops it (kills its process). `409 not_running`, `403 protected`, `404 unknown_payload`, `503 payload_manager_unavailable`; outside `on`: `409 not_on` (since v0.4) |
 | `POST /grant/start` | yes | compatibility only: always `409 already_allowed` (see [Permissions](#permissions-removed-in-v04)) |
@@ -178,17 +178,20 @@ The payload starts and stops other payloads through the Payload Manager (its HTT
 the same one its web page uses). It talks to it only when asked, never in the background.
 
 - `slot` is the Payload Manager's own key (for example `repo/ftpsrv@e8cce5d1`); use the value from `GET /payloads`.
-  `name` is the Payload Manager's name for it, else its id, else the file name without extension and version.
+  `name` is the Payload Manager's name for it, else its id, else the file name without extension and version;
+  `version` is the Payload Manager's version string for it (`""` when it gives none). Slots that are not valid
+  printable UTF-8 are left out of the list.
 - `running` is true when a process of that payload exists. A process counts when its name (without `.elf`,
   case-insensitive, first 19 characters) equals the payload's id or its file name without extension and without a
-  trailing version part (from the last `_` when a digit or `v` and a digit follows). If the same payload is
+  trailing version part (from the last `_` when a digit or `v` and a digit follows); a name the kernel cut
+  inside `.elf` (19 characters ending in `.`, `.e` or `.el`) counts as without it. If the same payload is
   running several times, `stop` ends the first process found.
 - `protected` is true for anything whose slot, id, file name, name or process name contains `kstuff`, `etahen`,
   `elfldr`, `pldmgr` or `ps5-hass` (case-insensitive). Such a payload is listed but never started or stopped
   (`403 protected`; the Payload Manager is not even asked), so the payload cannot switch off kstuff, the loader, the
   Payload Manager or itself.
-- The Payload Manager must answer within 2 s (list, then action) with at most 256 KB of JSON; anything else counts as not
-  reachable. `capabilities.payload_control` in `/info` is true when the last such call worked (false until the
+- The Payload Manager must answer within 2 s in total (for start and stop the list lookup and the action together)
+  with at most 256 KB of JSON; anything else counts as not reachable. `capabilities.payload_control` in `/info` is true when the last such call worked (false until the
   first one).
 - Outside `on` the payload does not contact the Payload Manager at all (the console may be freezing processes):
   `GET /payloads` answers `available` false, start and stop `409 not_on`.

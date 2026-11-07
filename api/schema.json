@@ -822,6 +822,9 @@
               "name": {
                 "type": "string"
               },
+              "version": {
+                "type": "string"
+              },
               "running": {
                 "type": "boolean"
               },
@@ -832,6 +835,7 @@
             "required": [
               "slot",
               "name",
+              "version",
               "running",
               "protected"
             ],

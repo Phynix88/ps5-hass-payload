@@ -330,12 +330,11 @@ static size_t encode_utf8(unsigned cp, char out[4]) {
   return 4;
 }
 
-bool jr_string(const jr_t *r, int tok, char *out, size_t cap) {
+/* Decodes into out; false on a bad escape or when it does not fit. The caller
+ * (jr_string) empties out on false, so a partial write never stays. */
+static bool decode_string(const jr_t *r, int tok, char *out, size_t cap) {
   const char *s, *end;
   size_t o = 0;
-  if (!valid_tok(r, tok) || r->tok[tok].type != JSMN_STRING || !cap) {
-    return false;
-  }
   s = r->src + r->tok[tok].start;
   end = r->src + r->tok[tok].end;
   while (s < end) {
@@ -389,6 +388,19 @@ bool jr_string(const jr_t *r, int tok, char *out, size_t cap) {
     o += n;
   }
   out[o] = '\0';
+  return true;
+}
+
+bool jr_string(const jr_t *r, int tok, char *out, size_t cap) {
+  if (!cap) {
+    return false;
+  }
+  out[0] = '\0';
+  if (!valid_tok(r, tok) || r->tok[tok].type != JSMN_STRING ||
+      !decode_string(r, tok, out, cap)) {
+    out[0] = '\0'; /* never leave unterminated or partial bytes behind */
+    return false;
+  }
   return true;
 }
 

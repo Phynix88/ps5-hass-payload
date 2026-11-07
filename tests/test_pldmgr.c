@@ -15,7 +15,7 @@
 /* --- mini Payload Manager ------------------------------------------------ */
 
 enum { M_NORMAL, M_STALL, M_GARBAGE, M_HUGE, M_HUGE_NO_LENGTH, M_TRUNCATED,
-       M_FAIL_ACTION };
+       M_FAIL_ACTION, M_STALL_ACTION };
 
 static struct {
   pthread_t th;
@@ -132,7 +132,7 @@ static void serve(int fd) {
   mode = srv.mode;
   pthread_mutex_unlock(&srv.mu);
 
-  if (mode == M_STALL) {
+  if (mode == M_STALL || (mode == M_STALL_ACTION && !strncmp(buf, "POST", 4))) {
     for (int i = 0; i < 400 && !srv.stop; i++) {
       usleep(10000);
     }
@@ -187,7 +187,9 @@ static void *srv_main(void *arg) {
   return NULL;
 }
 
-static void srv_start(int mode) {
+/* list/procs NULL = the real answers above. Everything the thread reads is set
+ * before it starts. */
+static void srv_start_with(int mode, const char *list, const char *procs) {
   struct sockaddr_in a;
   socklen_t l = sizeof(a);
   int one = 1;
@@ -195,8 +197,8 @@ static void srv_start(int mode) {
   srv.n_reqs = srv.markers = 0;
   srv.mode = mode;
   srv.stop = 0;
-  srv.list_body = LIST;
-  srv.procs_body = PROCS;
+  srv.list_body = list ? list : LIST;
+  srv.procs_body = procs ? procs : PROCS;
   pthread_mutex_init(&srv.mu, NULL);
   srv.listen_fd = socket(AF_INET, SOCK_STREAM, 0);
   setsockopt(srv.listen_fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
@@ -214,10 +216,13 @@ static void srv_start(int mode) {
   pldmgr_set_target("127.0.0.1", srv.port);
 }
 
+static void srv_start(int mode) { srv_start_with(mode, NULL, NULL); }
+
 static void srv_stop(void) {
   srv.stop = 1;
   pthread_join(srv.th, NULL);
   close(srv.listen_fd);
+  pthread_mutex_destroy(&srv.mu);
 }
 
 /* Requests whose line starts with prefix. */
@@ -296,6 +301,15 @@ static void test_match_names(void) {
                                   "WebKit-Autoloader-Installer_v0.6.1.elf"));
   T_ASSERT(pldmgr_process_matches("WebKit-Autoloader-I", NULL,
                                   "WebKit-Autoloader-Installer_v0.6.1.elf"));
+  /* "<name>.elf" cut at 19 characters by the kernel: base of 16, 17, 18, 19+ */
+  T_ASSERT(pldmgr_process_matches("abcdefghijklmnop.el", "abcdefghijklmnop", NULL));
+  T_ASSERT(pldmgr_process_matches("abcdefghijklmnopq.e", NULL, "abcdefghijklmnopq_v1.elf"));
+  T_ASSERT(pldmgr_process_matches("abcdefghijklmnopqr.", "abcdefghijklmnopqr", NULL));
+  T_ASSERT(pldmgr_process_matches("abcdefghijklmnopqrs", "abcdefghijklmnopqrs", NULL));
+  T_ASSERT(pldmgr_process_matches("abcdefghijklmnopqrs", "abcdefghijklmnopqrstuvw", NULL));
+  T_ASSERT(!pldmgr_process_matches("abcdefghijklmnop.el", "abcdefghijklmnopq", NULL));
+  T_ASSERT(!pldmgr_process_matches("abcdefghijklmnop.el", "abcdefghijklmno", NULL));
+  T_ASSERT(!pldmgr_process_matches("abcdefghijklmnopq.e", "abcdefghijklmnop", NULL));
   /* no match */
   T_ASSERT(!pldmgr_process_matches("ftpsrv.elf", "websrv", "websrv_v0.34.elf"));
   T_ASSERT(!pldmgr_process_matches("ftpsrv2.elf", "ftpsrv", "ftpsrv_v1.elf"));
@@ -462,16 +476,14 @@ static void test_garbage_answer_rejected(void) {
   T_ASSERT(pldmgr_list(e, 4) < 0);
   srv_stop();
   for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
-    srv_start(M_NORMAL);
-    srv.list_body = bad[i];
+    srv_start_with(M_NORMAL, bad[i], NULL);
     T_EQ_INT(pldmgr_list(e, 4), -EPROTO);
     T_ASSERT(!pldmgr_last_ok());
     T_EQ_INT(pldmgr_start("a/b"), -EPROTO);
     srv_stop();
   }
   /* broken process list */
-  srv_start(M_NORMAL);
-  srv.procs_body = "{\"processes\":7}";
+  srv_start_with(M_NORMAL, NULL, "{\"processes\":7}");
   T_EQ_INT(pldmgr_list(e, 4), -EPROTO);
   srv_stop();
 }
@@ -495,22 +507,85 @@ static void test_token_bound(void) {
     n += (size_t)snprintf(big + n, sizeof(big) - n, "%s0", i ? "," : "");
   }
   snprintf(big + n, sizeof(big) - n, "]}");
-  srv_start(M_NORMAL);
-  srv.list_body = big;
+  srv_start_with(M_NORMAL, big, NULL);
   T_EQ_INT(pldmgr_list(e, 4), -EPROTO);
   srv_stop();
 }
 
 static void test_odd_items_skipped(void) {
   pld_entry e[8];
-  srv_start(M_NORMAL);
-  srv.list_body =
+  srv_start_with(
+      M_NORMAL,
       "{\"items\":[5,{\"filename\":\"x.elf\"},{\"slot\":\"ok/one\",\"filename\":"
-      "\"one_v1.elf\"},{\"slot\":\"ok/two\",\"name\":\"T\\u00e4\\\"x\"}]}";
+      "\"one_v1.elf\"},{\"slot\":\"ok/two\",\"name\":\"T\\u00e4\\\"x\"}]}",
+      NULL);
   T_EQ_INT(pldmgr_list(e, 8), 2);
   T_EQ_STR(e[0].slot, "ok/one");
   T_EQ_STR(e[0].name, "one");
   T_EQ_STR(e[1].name, "T\xc3\xa4\"x");
+  srv_stop();
+}
+
+static void test_broken_fields_never_overrun(void) {
+  static char list[4096];
+  char longs[301];
+  pld_entry e[8];
+  int n;
+  memset(longs, 'n', 300);
+  longs[300] = '\0';
+  /* too long for their buffers: id, name, filename, version; slot too long;
+   * control character and invalid UTF-8 in slots; a good one at the end */
+  snprintf(list, sizeof(list),
+           "{\"items\":["
+           "{\"slot\":\"a/long\",\"id\":\"%s\",\"name\":\"%s\",\"filename\":\"%s\","
+           "\"version\":\"%s\"},"
+           "{\"slot\":\"%s\",\"name\":\"slot too long\"},"
+           "{\"slot\":\"c/\\u0001ctl\",\"name\":\"control\"},"
+           "{\"slot\":\"b/\xff\xfe\",\"name\":\"bytes\"},"
+           "{\"slot\":\"z/good\",\"name\":\"Good\",\"version\":\"1.2\"}]}",
+           longs, longs, longs, longs, longs);
+  srv_start_with(M_NORMAL, list, NULL);
+  n = pldmgr_list(e, 8);
+  T_EQ_INT(n, 2);
+  T_EQ_STR(e[0].slot, "a/long");
+  T_EQ_STR(e[0].name, "long"); /* name and id unusable: the slot's base */
+  T_EQ_STR(e[0].version, "");
+  T_ASSERT(!e[0].running && !e[0].protected_);
+  T_EQ_STR(e[1].slot, "z/good");
+  T_EQ_STR(e[1].version, "1.2");
+  srv_stop();
+  /* a bad escape makes the parser refuse the whole answer */
+  srv_start_with(M_NORMAL, "{\"items\":[{\"slot\":\"a/b\",\"name\":\"abc\\x\"}]}", NULL);
+  T_EQ_INT(pldmgr_list(e, 8), -EPROTO);
+  srv_stop();
+  srv_start_with(M_NORMAL, "{\"items\":[{\"slot\":\"a/b\",\"id\":\"ab\\u12g4\"}]}", NULL);
+  T_EQ_INT(pldmgr_list(e, 8), -EPROTO);
+  srv_stop();
+}
+
+static void test_start_total_time_is_bounded(void) {
+  int64_t t0;
+  srv_start(M_STALL_ACTION); /* list works, the action never answers */
+  t0 = now_ms();
+  T_EQ_INT(pldmgr_start("repo/CheatRunner@22222222"), -ETIMEDOUT);
+  T_ASSERT(now_ms() - t0 <= 2500);
+  t0 = now_ms();
+  T_EQ_INT(pldmgr_stop("repo/ftpsrv@e8cce5d1"), -ETIMEDOUT);
+  T_ASSERT(now_ms() - t0 <= 2500);
+  srv_stop();
+}
+
+static void test_version_in_list(void) {
+  pld_entry e[PS5H_PLDMGR_MAX_ENTRIES];
+  int n;
+  srv_start_with(M_NORMAL,
+                 "{\"items\":[{\"slot\":\"r/a\",\"version\":\"v0.21.1\"},"
+                 "{\"slot\":\"r/b\"}]}",
+                 NULL);
+  n = pldmgr_list(e, PS5H_PLDMGR_MAX_ENTRIES);
+  T_EQ_INT(n, 2);
+  T_EQ_STR(e[0].version, "v0.21.1");
+  T_EQ_STR(e[1].version, "");
   srv_stop();
 }
 
@@ -529,5 +604,8 @@ int main(void) {
   T_RUN(test_oversized_answer_rejected);
   T_RUN(test_token_bound);
   T_RUN(test_odd_items_skipped);
+  T_RUN(test_broken_fields_never_overrun);
+  T_RUN(test_start_total_time_is_bounded);
+  T_RUN(test_version_in_list);
   T_MAIN();
 }

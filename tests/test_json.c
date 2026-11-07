@@ -111,6 +111,45 @@ static void test_jr_unicode_escape(void) {
   T_ASSERT(!jr_string(&r, jr_get(&r, 0, "a"), buf, 4));
 }
 
+static void test_jr_string_failure_leaves_terminated_output(void) {
+  /* jsmn rejects bad escapes, so build the reader by hand: one string token
+   * over the raw text (what a caller sees if the parser ever lets one by). */
+  static const char *const raw[] = {
+      "abc\\x",       /* bad escape after good bytes */
+      "abc\\u12g4",   /* bad \u */
+      "abc\\u12",     /* cut \u */
+      "abc\\",        /* lone backslash at the end */
+      "abcdefgh",      /* does not fit */
+      "\\u00e4\\u00e4\\u00e4", /* does not fit, escapes */
+  };
+  char buf[6];
+  for (size_t i = 0; i < sizeof(raw) / sizeof(raw[0]); i++) {
+    jsmntok_t t = {.type = JSMN_STRING, .start = 0, .end = (int)strlen(raw[i]),
+                   .size = 0, .parent = -1};
+    jr_t r = {.src = raw[i], .len = strlen(raw[i]), .tok = &t, .ntok = 1};
+    memset(buf, 'X', sizeof(buf)); /* no NUL anywhere */
+    T_ASSERT(!jr_string(&r, 0, buf, sizeof(buf)));
+    T_ASSERT(memchr(buf, '\0', sizeof(buf)));
+    T_EQ_STR(buf, "");
+  }
+  {
+    const char *s = "{\"c\":\"abcdef\",\"e\":\"ok\"}";
+    jr_t r;
+    T_EQ_INT(jr_parse(&r, s, strlen(s), tok, 4096), 0);
+    memset(buf, 'X', sizeof(buf));
+    T_ASSERT(!jr_string(&r, jr_get(&r, 0, "nope"), buf, sizeof(buf)));
+    T_EQ_STR(buf, ""); /* missing key */
+    memset(buf, 'X', sizeof(buf));
+    T_ASSERT(!jr_string(&r, jr_get(&r, 0, "c"), buf, sizeof(buf))); /* 6 > 5 */
+    T_EQ_STR(buf, "");
+    memset(buf, 'X', sizeof(buf));
+    T_ASSERT(!jr_string(&r, jr_get(&r, 0, "c"), buf, 1));
+    T_EQ_INT(buf[0], 0);
+    T_ASSERT(jr_string(&r, jr_get(&r, 0, "e"), buf, sizeof(buf)));
+    T_EQ_STR(buf, "ok");
+  }
+}
+
 static void test_jr_numbers_and_bools(void) {
   const char *s = "{\"i\":65536,\"n\":-3,\"f\":1.5,\"t\":true,\"s\":\"7\"}";
   jr_t r;
@@ -155,6 +194,7 @@ int main(void) {
   T_RUN(test_jw_alloc_failure);
   T_RUN(test_jr_get_nested_only_direct_children);
   T_RUN(test_jr_unicode_escape);
+  T_RUN(test_jr_string_failure_leaves_terminated_output);
   T_RUN(test_jr_numbers_and_bools);
   T_RUN(test_jr_rejects_truncated);
   T_RUN(test_jr_token_limit);

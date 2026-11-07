@@ -12,6 +12,7 @@
 typedef struct {
   char slot[256];
   char name[64]; /* display name */
+  char version[32]; /* the Payload Manager's version string, may be "" */
   bool running;
   bool protected_; /* never started or stopped from here */
   int pid;         /* of the running process, else 0 */
@@ -19,9 +20,11 @@ typedef struct {
 
 /* Number of entries (<= max), or < 0: the Payload Manager does not answer
  * (-ECONNREFUSED, -ETIMEDOUT), answers nonsense (-EPROTO) or too much
- * (-EMSGSIZE). Slots that do not fit pld_entry are left out. */
+ * (-EMSGSIZE). Slots that do not fit pld_entry, or are not printable UTF-8,
+ * are left out. */
 int pldmgr_list(pld_entry *out, int max);
-/* 0 = started. -EPERM protected (no request is made), -EEXIST already runs,
+/* Everything (list and action) happens within PS5H_PLDMGR_TIMEOUT_MS in total.
+ * 0 = started. -EPERM protected (no request is made), -EEXIST already runs,
  * -ESRCH no such slot, -EINVAL bad slot, other < 0: see pldmgr_list, or -EIO
  * when the Payload Manager refuses. */
 int pldmgr_start(const char *slot);
@@ -38,7 +41,8 @@ bool pldmgr_is_protected(const char *s);
 void pldmgr_base_name(const char *slot, char out[64]);
 /* Does the process (as the console lists it, with or without ".elf")
  * belong to a payload with this id and/or file name (either may be NULL)?
- * Case-insensitive, on the first 19 characters. */
+ * Case-insensitive, on the first 19 characters; a name cut inside ".elf"
+ * (exactly 19 characters ending in ".", ".e" or ".el") counts as without it. */
 bool pldmgr_process_matches(const char *proc, const char *id,
                             const char *filename);
 /* True when the last contact with the Payload Manager worked. */

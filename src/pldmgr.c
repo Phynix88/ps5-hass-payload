@@ -97,20 +97,28 @@ void pldmgr_base_name(const char *slot, char out[64]) {
 
 static bool same_comm(const char *proc, const char *key) {
   size_t n = strlen(proc);
+  char tmp[COMM_LEN + 1];
   if (!*key) {
     return false;
   }
   if (ends_with_ci(proc, n, ".elf")) {
-    char tmp[COMM_LEN + 5];
     n -= 4;
-    if (n > COMM_LEN) {
-      n = COMM_LEN;
+  } else if (n == COMM_LEN) {
+    /* the kernel cut "<name>.elf" at 19 characters: ".", ".e" or ".el" is left */
+    if (ends_with_ci(proc, n, ".el")) {
+      n -= 3;
+    } else if (ends_with_ci(proc, n, ".e")) {
+      n -= 2;
+    } else if (proc[n - 1] == '.') {
+      n -= 1;
     }
-    memcpy(tmp, proc, n);
-    tmp[n] = '\0';
-    return !strncasecmp(tmp, key, COMM_LEN);
   }
-  return !strncasecmp(proc, key, COMM_LEN);
+  if (n > COMM_LEN) {
+    n = COMM_LEN;
+  }
+  memcpy(tmp, proc, n);
+  tmp[n] = '\0';
+  return !strncasecmp(tmp, key, COMM_LEN);
 }
 
 bool pldmgr_process_matches(const char *proc, const char *id,
@@ -357,10 +365,22 @@ typedef struct {
   char name[64];
 } proc_t;
 
+/* A missing or invalid field gives "" (jr_string always terminates). */
 static bool tok_str(const jr_t *r, int obj, const char *key, char *out,
                     size_t cap) {
-  out[0] = '\0';
   return jr_string(r, jr_get(r, obj, key), out, cap);
+}
+
+/* Printable (no control characters) and valid UTF-8, unchanged by sanitising. */
+static bool slot_ok(const char *s) {
+  char tmp[256];
+  size_t n = strlen(s);
+  for (size_t i = 0; i < n; i++) {
+    if ((unsigned char)s[i] < 0x20 || s[i] == 0x7f) {
+      return false;
+    }
+  }
+  return utf8_sanitize(s, n, tmp, sizeof(tmp)) == n && !memcmp(tmp, s, n);
 }
 
 /* Process list: "processes":[{"pid":N,"name":"..."}]. */
@@ -398,14 +418,16 @@ static int read_procs(int64_t deadline, proc_t *out, int max, jsmntok_t *tok) {
 /* Builds one entry from the i-th item; false = not usable. */
 static bool make_entry(const jr_t *r, int i, const proc_t *procs, int nproc,
                        pld_entry *e) {
-  char slot[256], id[128], file[256], name[128];
+  char slot[256], id[128], file[256], name[128], version[64];
+  if (!tok_str(r, i, "slot", slot, sizeof(slot)) || !slot[0] || !slot_ok(slot)) {
+    return false;
+  }
   tok_str(r, i, "id", id, sizeof(id));
   tok_str(r, i, "filename", file, sizeof(file));
   tok_str(r, i, "name", name, sizeof(name));
-  if (!tok_str(r, i, "slot", slot, sizeof(slot)) || !slot[0]) {
-    return false;
-  }
+  tok_str(r, i, "version", version, sizeof(version));
   memset(e, 0, sizeof(*e));
+  utf8_sanitize(version, strlen(version), e->version, sizeof(e->version));
   snprintf(e->slot, sizeof(e->slot), "%s", slot);
   if (name[0] || id[0]) {
     const char *s = name[0] ? name : id;
@@ -431,12 +453,11 @@ static bool make_entry(const jr_t *r, int i, const proc_t *procs, int nproc,
   return true;
 }
 
-static int list_all(pld_entry *out, int max) {
+static int list_all(pld_entry *out, int max, int64_t deadline) {
   answer a;
   jr_t r;
   jsmntok_t *tok = malloc(PS5H_PLDMGR_MAX_TOKENS * sizeof(*tok));
   proc_t *procs = malloc(PS5H_MAX_PROCS * sizeof(*procs));
-  int64_t deadline = now_ms() + PS5H_PLDMGR_TIMEOUT_MS;
   int arr, n = 0, nproc, rc;
   if (!tok || !procs) {
     free(tok);
@@ -478,7 +499,8 @@ fail:
 }
 
 int pldmgr_list(pld_entry *out, int max) {
-  return max > 0 ? list_all(out, max) : -EINVAL;
+  return max > 0 ? list_all(out, max, now_ms() + PS5H_PLDMGR_TIMEOUT_MS)
+                 : -EINVAL;
 }
 
 /* --- start / stop ---------------------------------------------------------- */
@@ -515,7 +537,8 @@ static bool encode_slot(const char *slot, char *out, size_t cap) {
 
 /* Looks the slot up (one list call) and applies the protection and state
  * checks; on 0 *e is the entry. */
-static int resolve(const char *slot, bool want_running, pld_entry *e) {
+static int resolve(const char *slot, bool want_running, int64_t deadline,
+                   pld_entry *e) {
   pld_entry *all;
   const pld_entry *x;
   int n, rc = 0;
@@ -528,7 +551,7 @@ static int resolve(const char *slot, bool want_running, pld_entry *e) {
   if (!(all = malloc(PS5H_PLDMGR_MAX_ENTRIES * sizeof(*all)))) {
     return -ENOMEM;
   }
-  if ((n = list_all(all, PS5H_PLDMGR_MAX_ENTRIES)) < 0) {
+  if ((n = list_all(all, PS5H_PLDMGR_MAX_ENTRIES, deadline)) < 0) {
     rc = n;
   } else if (!(x = find_slot(all, n, slot))) {
     rc = -ESRCH;
@@ -543,9 +566,9 @@ static int resolve(const char *slot, bool want_running, pld_entry *e) {
   return rc;
 }
 
-static int act(const char *path) {
+static int act(const char *path, int64_t deadline) {
   answer a;
-  int rc = http_call("POST", path, now_ms() + PS5H_PLDMGR_TIMEOUT_MS, &a);
+  int rc = http_call("POST", path, deadline, &a);
   if (rc < 0) {
     target.ok = false;
     return rc;
@@ -558,7 +581,8 @@ static int act(const char *path) {
 int pldmgr_start(const char *slot) {
   pld_entry e;
   char enc[PATH_MAX_REQ - 32], path[PATH_MAX_REQ];
-  int rc = resolve(slot, false, &e);
+  int64_t deadline = now_ms() + PS5H_PLDMGR_TIMEOUT_MS; /* list + action */
+  int rc = resolve(slot, false, deadline, &e);
   if (rc < 0) {
     return rc;
   }
@@ -566,7 +590,7 @@ int pldmgr_start(const char *slot) {
     return -EINVAL;
   }
   snprintf(path, sizeof(path), "/loadpayload:%s", enc);
-  rc = act(path);
+  rc = act(path, deadline);
   log_msg("start payload %s: %s", e.name, rc ? strerror(-rc) : "ok");
   return rc;
 }
@@ -574,12 +598,13 @@ int pldmgr_start(const char *slot) {
 int pldmgr_stop(const char *slot) {
   pld_entry e;
   char path[64];
-  int rc = resolve(slot, true, &e);
+  int64_t deadline = now_ms() + PS5H_PLDMGR_TIMEOUT_MS;
+  int rc = resolve(slot, true, deadline, &e);
   if (rc < 0) {
     return rc;
   }
   snprintf(path, sizeof(path), "/process_kill?pid=%d", e.pid);
-  rc = act(path);
+  rc = act(path, deadline);
   log_msg("stop payload %s: %s", e.name, rc ? strerror(-rc) : "ok");
   return rc;
 }

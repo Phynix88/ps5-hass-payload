@@ -716,6 +716,8 @@ static void h_payloads(route_resp *out) {
     jw_cstr(w, list[i].slot);
     jw_key(w, "name");
     jw_cstr(w, list[i].name);
+    jw_key(w, "version");
+    jw_cstr(w, list[i].version);
     jw_key(w, "running");
     jw_bool(w, list[i].running);
     jw_key(w, "protected");
