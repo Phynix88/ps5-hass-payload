@@ -1,6 +1,11 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "t.h"
 
+#include <signal.h>
+#include <sys/time.h>
+#include <sys/wait.h>
+
+#include "limits.h"
 #include "platform_fake.h"
 #include "procs.h"
 
@@ -40,10 +45,79 @@ static void test_payloads_from_platform(void) {
   T_EQ_STR(out[0], "kstuff.elf");
 }
 
+static int64_t real_ms(void) {
+  struct timeval tv;
+  gettimeofday(&tv, NULL);
+  return (int64_t)tv.tv_sec * 1000 + tv.tv_usec / 1000;
+}
+
+static void on_term_flush(int sig) {
+  (void)sig;
+  usleep(100 * 1000); /* writes its file, then ends */
+  _exit(0);
+}
+
+/* A child that ends on SIGTERM (mode 0), ends after a short flush (1), or
+ * ignores SIGTERM (2). */
+static pid_t child(int mode) {
+  pid_t pid = fork();
+  if (pid == 0) {
+    if (mode == 1) {
+      signal(SIGTERM, on_term_flush);
+    } else if (mode == 2) {
+      signal(SIGTERM, SIG_IGN);
+    }
+    for (;;) {
+      pause();
+    }
+  }
+  return pid;
+}
+
+static bool gone(pid_t pid) { return kill(pid, 0) != 0 && errno == ESRCH; }
+
+static pid_t kids[3];
+
+static void stop_body(void) {
+  int64_t t;
+  kids[0] = child(0);
+  kids[1] = child(1);
+  T_ASSERT(kids[0] > 0 && kids[1] > 0);
+  usleep(50 * 1000); /* handlers installed */
+  t = real_ms();
+  T_EQ_INT(procs_stop(kids, 2, 1500), 0); /* nobody needed SIGKILL */
+  T_ASSERT(real_ms() - t < 1000);
+  T_ASSERT(gone(kids[0]) && gone(kids[1]));
+  kids[2] = child(2);
+  T_ASSERT(kids[2] > 0);
+  usleep(50 * 1000);
+  t = real_ms();
+  T_EQ_INT(procs_stop(&kids[2], 1, 300), 1);
+  T_ASSERT(real_ms() - t >= 300);
+  usleep(50 * 1000);
+  T_ASSERT(gone(kids[2]));
+  T_EQ_INT(PS5H_STOP_WAIT_MS, 1500);
+}
+
+/* An older instance gets SIGTERM first (it saves its play time then); only
+ * one that is still there after the wait gets SIGKILL. */
+static void test_stop_terms_first_then_kills(void) {
+  memset(kids, 0, sizeof(kids));
+  signal(SIGCHLD, SIG_IGN); /* children are reaped at once: no zombies */
+  stop_body();
+  for (int i = 0; i < 3; i++) { /* nothing left behind, even on failure */
+    if (kids[i] > 0) {
+      kill(kids[i], SIGKILL);
+    }
+  }
+  signal(SIGCHLD, SIG_DFL);
+}
+
 int main(void) {
   T_RUN(test_filter_drops_sony_and_dupes);
   T_RUN(test_filter_keeps_truncated_19);
   T_RUN(test_filter_respects_max);
   T_RUN(test_payloads_from_platform);
+  T_RUN(test_stop_terms_first_then_kills);
   T_MAIN();
 }

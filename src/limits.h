@@ -46,6 +46,7 @@
 #define PS5H_FAN_CHECK_S         5
 #define PS5H_FAN_MAX_FAILS       5
 #define PS5H_MAX_PROCS           512 /* process names read per scan */
+#define PS5H_STOP_WAIT_MS        1500 /* an older instance's time to end on SIGTERM */
 #define PS5H_KEEP_AWAKE_S        240 /* keep-awake tick, below the 5 min limit */
 #define PS5H_POWER_FAIL_OPEN_S   60  /* power state unreadable this long = "on" */
 #define PS5H_POWER_READ_MS       250 /* power state read at most this often */

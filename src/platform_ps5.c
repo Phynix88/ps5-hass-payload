@@ -38,6 +38,9 @@
 
 #include <ps5/kernel.h>
 
+#include "limits.h"
+#include "procs.h"
+
 #define PROC_NAME "ps5-hass.elf"
 
 /* --- console functions --------------------------------------------------- */
@@ -201,7 +204,8 @@ static void kill_older_instances(void) {
   pid_t self = getpid();
   size_t size;
   uint8_t *buf = proc_list(&size);
-  bool killed = false;
+  pid_t old[8];
+  int n = 0;
   if (!buf) {
     return;
   }
@@ -211,13 +215,15 @@ static void kill_older_instances(void) {
       break;
     }
     p += ki->ki_structsize;
-    if (ki->ki_pid != self && !strcmp(ki->ki_comm, PROC_NAME)) {
-      kill(ki->ki_pid, SIGKILL);
-      killed = true;
+    if (ki->ki_pid != self && !strcmp(ki->ki_comm, PROC_NAME) &&
+        n < (int)(sizeof(old) / sizeof(old[0]))) {
+      old[n++] = ki->ki_pid;
     }
   }
   free(buf);
-  if (killed) {
+  if (n > 0) {
+    /* SIGTERM first: the old one saves its play time; SIGKILL if it hangs */
+    procs_stop(old, n, PS5H_STOP_WAIT_MS);
     sleep(1); /* let the old one release its port */
   }
 }

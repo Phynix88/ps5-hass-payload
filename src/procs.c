@@ -1,8 +1,12 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "procs.h"
 
+#include <errno.h>
+#include <signal.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "limits.h"
 
@@ -53,4 +57,31 @@ int procs_payloads(plat_name *out, int max) {
   n = procs_filter(all, plat_proc_names(all, PS5H_MAX_PROCS), out, max);
   free(all);
   return n;
+}
+
+static bool alive(pid_t pid) { return kill(pid, 0) == 0 || errno != ESRCH; }
+
+int procs_stop(const pid_t *pids, int n, int wait_ms) {
+  int killed = 0;
+  bool left = false;
+  for (int i = 0; i < n; i++) {
+    kill(pids[i], SIGTERM);
+  }
+  for (int waited = 0;; waited += 50) {
+    left = false;
+    for (int i = 0; i < n && !left; i++) {
+      left = alive(pids[i]);
+    }
+    if (!left || waited >= wait_ms) {
+      break;
+    }
+    usleep(50 * 1000);
+  }
+  for (int i = 0; left && i < n; i++) {
+    if (alive(pids[i])) {
+      kill(pids[i], SIGKILL);
+      killed++;
+    }
+  }
+  return killed;
 }

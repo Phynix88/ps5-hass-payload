@@ -42,7 +42,8 @@ copy. Without an autoload you load it again after every console restart; pairing
 `/data/ps5-hass/`.
 
 **Restarting the payload** (for example after editing `config.json`): load it again, from the Payload Manager or the
-ELF loader. The new copy replaces the running one.
+ELF loader. The new copy replaces the running one: it asks the old one to stop (which saves the play time counted so
+far) and ends it after 1.5 s if it is still there.
 
 ### Removal
 
