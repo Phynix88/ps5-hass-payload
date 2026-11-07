@@ -10,6 +10,7 @@
 #include <time.h>
 
 #include "limits.h"
+#include "platform_fake.h"
 #include "pldmgr.h"
 
 /* --- mini Payload Manager ------------------------------------------------ */
@@ -323,9 +324,9 @@ static void test_protected_names(void) {
   static const char *const prot[] = {
       "kstuff", "kstuff.elf", "KSTUFF", "kstuff-lite_v1.11.elf", "repo/kstuff@44444444",
       "etaHEN_2.5B.bin", "ETAHEN", "elfldr.elf", "my-elfldr-x", "pldmgr", "PLDMGR.elf",
-      "ps5-hass.elf", "Ps5-Hass"};
-  static const char *const open[] = {"ftpsrv.elf", "websrv_v0.34.elf", "CheatRunner",
-                                     "ps5upload_v7.1.19.elf", "ShadowMountPlus_1.7beta7.elf",
+      "ps5-hass.elf", "Ps5-Hass", "CheatRunner", "CheatRunner_v0.18.1.elf", "cheatrunner",
+      "repo/CheatRunner@22222222", "my-cheat-tool", "ps5debug", "ps5debug-ng", "PS5Debug_v1.elf"};
+  static const char *const open[] = {"ftpsrv.elf", "websrv_v0.34.elf", "ps5upload_v7.1.19.elf", "ShadowMountPlus_1.7beta7.elf",
                                      "", "ps5"};
   for (size_t i = 0; i < sizeof(prot) / sizeof(prot[0]); i++) {
     T_ASSERT(pldmgr_is_protected(prot[i]));
@@ -355,7 +356,7 @@ static void test_list_flags(void) {
   x = find(e, n, "repo/websrv@11111111");
   T_ASSERT(x && !x->running && x->pid == 0);
   x = find(e, n, "repo/CheatRunner@22222222"); /* no name: the id */
-  T_ASSERT(x && !x->running);
+  T_ASSERT(x && !x->running && x->protected_); /* cheat payloads: protected since v0.4.1 */
   T_EQ_STR(x->name, "CheatRunner");
   x = find(e, n, "repo/smp@33333333");
   T_ASSERT(x && x->running && x->pid == 98); /* only the file name matches */
@@ -403,14 +404,51 @@ static void test_start_refuses_running(void) {
   srv_stop();
 }
 
+/* A payload that is stopped or started while a game runs can hang the
+ * console (v0.4.0 incident): nothing is sent then. */
+static void test_app_running_blocks_start_and_stop(void) {
+  fake_reset();
+  fake.running.app_id = 7;
+  srv_start(M_NORMAL);
+  T_EQ_INT(pldmgr_stop("repo/ftpsrv@e8cce5d1"), -EBUSY);
+  T_EQ_INT(pldmgr_start("repo/websrv@11111111"), -EBUSY);
+  T_EQ_INT(pldmgr_stop("repo/nope@00000000"), -EBUSY); /* before any lookup */
+  T_EQ_INT(total_reqs(), 0); /* not even a list request */
+  /* protected stays 403 (checked first), a bad slot stays a bad slot */
+  T_EQ_INT(pldmgr_stop("repo/kstuff@44444444"), -EPERM);
+  T_EQ_INT(pldmgr_start("repo/CheatRunner@22222222"), -EPERM);
+  T_EQ_INT(pldmgr_start(""), -EINVAL);
+  T_EQ_INT(total_reqs(), 0);
+  /* the game closes: payload control works again */
+  fake.running.app_id = 0;
+  T_EQ_INT(pldmgr_stop("repo/ftpsrv@e8cce5d1"), 0);
+  T_EQ_INT(count_reqs("POST /process_kill?pid=97 HTTP/1.1"), 1);
+  srv_stop();
+  fake_reset();
+}
+
+static void test_unreadable_running_app_blocks(void) {
+  fake_reset();
+  fake.running.app_id = 0;
+  srv_start(M_NORMAL);
+  /* plat_running_app() fails when its capability is missing or the call
+   * errors: the fake reports < 0 through running_rc */
+  fake.running_rc = -5;
+  T_EQ_INT(pldmgr_stop("repo/ftpsrv@e8cce5d1"), -EBUSY);
+  T_EQ_INT(pldmgr_start("repo/websrv@11111111"), -EBUSY);
+  T_EQ_INT(total_reqs(), 0);
+  srv_stop();
+  fake_reset();
+}
+
 static void test_start_posts_loadpayload(void) {
   srv_start(M_NORMAL);
-  T_EQ_INT(pldmgr_start("repo/CheatRunner@22222222"), 0);
-  T_EQ_INT(count_reqs("POST /loadpayload:repo/CheatRunner%4022222222 HTTP/1.1"), 1);
+  T_EQ_INT(pldmgr_start("repo/websrv@11111111"), 0);
+  T_EQ_INT(count_reqs("POST /loadpayload:repo/websrv%4011111111 HTTP/1.1"), 1);
   T_EQ_INT(srv.markers, 3); /* list, processes, load */
   srv_stop();
   srv_start(M_FAIL_ACTION);
-  T_EQ_INT(pldmgr_start("repo/CheatRunner@22222222"), -EIO);
+  T_EQ_INT(pldmgr_start("repo/websrv@11111111"), -EIO);
   srv_stop();
 }
 
@@ -567,7 +605,7 @@ static void test_start_total_time_is_bounded(void) {
   int64_t t0;
   srv_start(M_STALL_ACTION); /* list works, the action never answers */
   t0 = now_ms();
-  T_EQ_INT(pldmgr_start("repo/CheatRunner@22222222"), -ETIMEDOUT);
+  T_EQ_INT(pldmgr_start("repo/websrv@11111111"), -ETIMEDOUT);
   T_ASSERT(now_ms() - t0 <= 2500);
   t0 = now_ms();
   T_EQ_INT(pldmgr_stop("repo/ftpsrv@e8cce5d1"), -ETIMEDOUT);
@@ -596,6 +634,8 @@ int main(void) {
   T_RUN(test_list_flags);
   T_RUN(test_protected_never_started);
   T_RUN(test_start_refuses_running);
+  T_RUN(test_app_running_blocks_start_and_stop);
+  T_RUN(test_unreadable_running_app_blocks);
   T_RUN(test_start_posts_loadpayload);
   T_RUN(test_stop_uses_pid_from_process_list);
   T_RUN(test_unreachable_returns_error_fast);

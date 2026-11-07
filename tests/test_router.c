@@ -653,6 +653,37 @@ static void test_payloads_protected_is_403_without_contact(void) {
   T_EQ_INT(call("POST", "/api/v1/payloads/start", "{\"slot\":\"local/ps5-hass.elf\"}"), 403);
 }
 
+static void test_payloads_refused_while_app_runs(void) {
+  setup();
+  pair();
+  /* the manager is unreachable, yet a running app is answered 409 (not 503):
+   * the check comes before any contact */
+  fake.running.app_id = 7;
+  T_EQ_INT(call("POST", "/api/v1/payloads/stop", "{\"slot\":\"repo/ftpsrv@e8cce5d1\"}"), 409);
+  T_ASSERT(strstr(body, "\"error\":\"app_running\""));
+  T_EQ_INT(call("POST", "/api/v1/payloads/start", "{\"slot\":\"repo/ftpsrv@e8cce5d1\"}"), 409);
+  T_ASSERT(strstr(body, "\"error\":\"app_running\""));
+  /* protected is still answered first */
+  T_EQ_INT(call("POST", "/api/v1/payloads/stop", "{\"slot\":\"repo/CheatRunner@22222222\"}"), 403);
+  T_ASSERT(strstr(body, "\"error\":\"protected\""));
+  T_EQ_INT(call("POST", "/api/v1/payloads/stop", "{\"slot\":\"repo/ps5debug-ng@12121212\"}"), 403);
+  /* a read error fails safe */
+  fake.running.app_id = 0;
+  fake.running_rc = -5;
+  T_EQ_INT(call("POST", "/api/v1/payloads/start", "{\"slot\":\"repo/ftpsrv@e8cce5d1\"}"), 409);
+  T_ASSERT(strstr(body, "\"error\":\"app_running\""));
+  /* no app: the usual answer (the manager is not there) */
+  fake.running_rc = 0;
+  T_EQ_INT(call("POST", "/api/v1/payloads/stop", "{\"slot\":\"repo/ftpsrv@e8cce5d1\"}"), 503);
+  /* outside "on" the console is not asked at all */
+  fake.running.app_id = 7;
+  rest(500);
+  fake.reads = fake.sony_calls = 0;
+  T_EQ_INT(call("POST", "/api/v1/payloads/stop", "{\"slot\":\"repo/ftpsrv@e8cce5d1\"}"), 409);
+  T_ASSERT(strstr(body, "\"error\":\"not_on\""));
+  T_EQ_INT(fake.sony_calls, 0);
+}
+
 static void test_payloads_outside_on_leave_manager_alone(void) {
   setup();
   pair();
@@ -873,6 +904,7 @@ int main(void) {
   T_RUN(test_gated_routes_refuse_outside_on);
   T_RUN(test_payloads_unavailable_without_manager);
   T_RUN(test_payloads_protected_is_403_without_contact);
+  T_RUN(test_payloads_refused_while_app_runs);
   T_RUN(test_payloads_outside_on_leave_manager_alone);
   T_RUN(test_unauthenticated_pair_refused_outside_on);
   T_RUN(test_keep_awake_off_and_reads_work_outside_on);

@@ -25,13 +25,15 @@ typedef struct {
 int pldmgr_list(pld_entry *out, int max);
 /* Everything (list and action) happens within PS5H_PLDMGR_TIMEOUT_MS in total.
  * 0 = started. -EPERM protected (no request is made), -EEXIST already runs,
- * -ESRCH no such slot, -EINVAL bad slot, other < 0: see pldmgr_list, or -EIO
+ * -EBUSY an app or game runs (or the console does not tell; no request is
+ * made), -ESRCH no such slot, -EINVAL bad slot, other < 0: see pldmgr_list, or -EIO
  * when the Payload Manager refuses. */
 int pldmgr_start(const char *slot);
 /* 0 = stopped (the first process of the payload gets killed). -ENOENT does
  * not run; other codes as pldmgr_start. */
 int pldmgr_stop(const char *slot);
-/* Case-insensitive substring: kstuff, etahen, elfldr, pldmgr, ps5-hass. */
+/* Case-insensitive substring: kstuff, etahen, elfldr, pldmgr, ps5-hass, cheat,
+ * ps5debug. */
 bool pldmgr_is_protected(const char *s);
 /* Base name of a payload file or slot: path and extension (.elf, .bin) cut,
  * then a version part cut from the last "_" when it starts with a digit or

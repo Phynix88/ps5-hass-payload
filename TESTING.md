@@ -53,6 +53,7 @@ Diagnostics: `/api/v1/info` (`last_error`, `capabilities`) and `ftp://$PS5:2121/
 | 24 | `POST /keep_awake` `{"on":true}`, leave the console idle for longer than the auto rest time set in the console's power settings, then `{"on":false}` | console stays on while switched on; goes to rest mode after switching off and waiting the auto rest time |
 | 25 | `/state`: `soc_power`, `drives` with an M.2 or USB drive attached and without | `total_mw` plausible (tens of watts), drives with `free_mb` and `total_mb`; list empty without |
 | 26 | rest mode **with v0.4 alone** (no other payload that keeps the console awake), twice: first let the console fall asleep (auto rest time or `POST /power/standby`), then once more and wake it with the controller; `GET /state` and `/info` while it rests (if reachable), after waking | no crash, no console freeze; while not `on`: `409 not_on` for requests that need the console, no console calls; after waking `/state` answers within 10 s and play time continues without a long session across the rest |
+| 27 | with a game running (CheatRunner loaded, if you use it): `POST /payloads/stop` and `/payloads/start` with the FTP payload's slot, then with the CheatRunner slot; `GET /payloads` | `409 app_running` for the FTP payload, `403 protected` for CheatRunner; nothing stops, the console stays up; with the game closed stop and start work again |
 
 ## Known console behaviour
 

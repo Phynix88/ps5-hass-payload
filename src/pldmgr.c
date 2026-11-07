@@ -17,6 +17,7 @@
 #include "json.h"
 #include "limits.h"
 #include "log.h"
+#include "platform.h"
 
 #ifndef MSG_NOSIGNAL
 #define MSG_NOSIGNAL 0
@@ -52,7 +53,7 @@ static bool contains_ci(const char *s, const char *needle) {
 
 bool pldmgr_is_protected(const char *s) {
   static const char *const names[] = {"kstuff", "etahen", "elfldr", "pldmgr",
-                                      "ps5-hass"};
+                                      "ps5-hass", "cheat", "ps5debug"};
   for (size_t i = 0; s && i < sizeof(names) / sizeof(names[0]); i++) {
     if (contains_ci(s, names[i])) {
       return true;
@@ -535,6 +536,14 @@ static bool encode_slot(const char *slot, char *out, size_t cap) {
   return true;
 }
 
+/* Stopping or starting a payload while a game runs hung a console (v0.4.0:
+ * CheatRunner is attached to the game). Nothing is sent then; a console that
+ * does not tell counts as running. */
+static bool app_runs(void) {
+  plat_running r;
+  return plat_running_app(&r) != 0;
+}
+
 /* Looks the slot up (one list call) and applies the protection and state
  * checks; on 0 *e is the entry. */
 static int resolve(const char *slot, bool want_running, int64_t deadline,
@@ -547,6 +556,9 @@ static int resolve(const char *slot, bool want_running, int64_t deadline,
   }
   if (pldmgr_is_protected(slot)) {
     return -EPERM; /* nothing is sent */
+  }
+  if (app_runs()) {
+    return -EBUSY; /* nothing is sent */
   }
   if (!(all = malloc(PS5H_PLDMGR_MAX_ENTRIES * sizeof(*all)))) {
     return -ENOMEM;

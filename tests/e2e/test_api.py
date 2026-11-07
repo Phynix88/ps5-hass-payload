@@ -668,6 +668,15 @@ def test_payloads_list_start_stop_with_stand_in(tmp_path):
             assert status == 403 and doc["error"] == "protected"
             assert len(StandInManager.seen) == before  # protected: no request
 
+        # a running game: nothing reaches the Payload Manager (v0.4.1)
+        assert c.post("/api/v1/apps/PPSA00001/launch")[0] == 200
+        before = len(StandInManager.seen)
+        for path in ("start", "stop"):
+            status, doc, _ = c.post(f"/api/v1/payloads/{path}", {"slot": "repo/websrv@11111111"})
+            assert status == 409 and doc["error"] == "app_running"
+            validate("error", doc)
+        assert len(StandInManager.seen) == before
+
         # outside "on" nothing reaches the Payload Manager
         go_to_rest(c)
         before = len(StandInManager.seen)

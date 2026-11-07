@@ -540,7 +540,8 @@
             "protected",
             "already_running",
             "unknown_payload",
-            "payload_manager_unavailable"
+            "payload_manager_unavailable",
+            "app_running"
           ]
         },
         "message": {

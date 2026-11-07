@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.4.1
+
+**Update from v0.4.0.** v0.4.0 allowed stopping payloads while a game ran; stopping CheatRunner during a game hung
+a console (the whole homebrew stack died and the console needed a forced power-off).
+
+- `POST /payloads/start` and `/payloads/stop` answer `409 app_running` while an app or game runs, without asking
+  the Payload Manager. A console that cannot tell is treated as running.
+- CheatRunner (any payload with `cheat` in its name) and ps5debug are protected: never started or stopped here.
+
 ## v0.4.0
 
 Upgrading from v0.3: **there are no permissions any more.** Pairing with the code on the TV is the only step, and a

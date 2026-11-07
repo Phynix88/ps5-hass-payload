@@ -745,6 +745,9 @@ static void h_payload_action(const jr_t *r, bool start, route_resp *out) {
   case -EPERM:
     fail(out, 403, "protected", "this payload is never started or stopped here");
     return;
+  case -EBUSY:
+    fail(out, 409, "app_running", "close the running game or app first");
+    return;
   case -EEXIST:
     fail(out, 409, "already_running", "the payload is already running");
     return;

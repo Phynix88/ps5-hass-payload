@@ -73,8 +73,8 @@ There are no CORS headers.
 | `POST /keep_awake` | yes | body `{"on":true}`; answer `{"keep_awake":true}`. While on, the payload resets the console's auto power-down timer every 240 s. Without `capabilities.keep_awake`: `409 not_available`. The setting lives in memory only (off after a payload restart) and does not stop rest mode started by a button or a request (since v0.4) |
 | `GET /playtime` | yes | `?since=<unix seconds>` (default: now minus 8 days; not a number of 1 to 11 digits: `400 bad_request`). Play time per title, see [Play time](#play-time-since-v04) (since v0.4) |
 | `GET /payloads` | yes | the payloads the Payload Manager has installed: `{"available":true,"payloads":[{"slot","name","version","running","protected"}]}`, see [Payloads](#payloads-since-v04). Payload Manager not reachable, or the console not `on`: `available` false and an empty list (since v0.4) |
-| `POST /payloads/start` | yes | body `{"slot":"repo/ftpsrv@e8cce5d1"}`: starts that payload. `409 already_running`, `403 protected`, `404 unknown_payload`, `503 payload_manager_unavailable`; outside `on`: `409 not_on` (since v0.4) |
-| `POST /payloads/stop` | yes | body `{"slot":"…"}`: stops it (kills its process). `409 not_running`, `403 protected`, `404 unknown_payload`, `503 payload_manager_unavailable`; outside `on`: `409 not_on` (since v0.4) |
+| `POST /payloads/start` | yes | body `{"slot":"repo/ftpsrv@e8cce5d1"}`: starts that payload. `409 already_running`, `409 app_running` (a game or app runs, since v0.4.1), `403 protected`, `404 unknown_payload`, `503 payload_manager_unavailable`; outside `on`: `409 not_on` (since v0.4) |
+| `POST /payloads/stop` | yes | body `{"slot":"…"}`: stops it (kills its process). `409 not_running`, `409 app_running` (since v0.4.1), `403 protected`, `404 unknown_payload`, `503 payload_manager_unavailable`; outside `on`: `409 not_on` (since v0.4) |
 | `POST /grant/start` | yes | compatibility only: always `409 already_allowed` (see [Permissions](#permissions-removed-in-v04)) |
 | `POST /grant/finish` | yes | compatibility only: always `409 no_code` |
 | `POST /grant/revoke` | yes | compatibility only: `200` with `{"permissions":{…}}`, nothing is revoked |
@@ -191,9 +191,14 @@ the same one its web page uses). It talks to it only when asked, never in the ba
   inside `.elf` (19 characters ending in `.`, `.e` or `.el`) counts as without it. If the same payload is
   running several times, `stop` ends the first process found.
 - `protected` is true for anything whose slot, id, file name, name or process name contains `kstuff`, `etahen`,
-  `elfldr`, `pldmgr` or `ps5-hass` (case-insensitive). Such a payload is listed but never started or stopped
-  (`403 protected`; the Payload Manager is not even asked), so the payload cannot switch off kstuff, the loader, the
-  Payload Manager or itself.
+  `elfldr`, `pldmgr`, `ps5-hass`, `cheat` or `ps5debug` (case-insensitive; since v0.4.1 also cheat payloads such as
+  CheatRunner and ps5debug). Such a payload is listed but never started or stopped (`403 protected`; the Payload
+  Manager is not even asked), so the payload cannot switch off kstuff, the loader, the Payload Manager or itself,
+  and never touches a payload that is attached to a running game.
+- Start and stop are refused with `409 app_running` (message "close the running game or app first") while an app or
+  game runs (since v0.4.1). Stopping or starting a payload during a game hung a console. The check comes after
+  `not_on` and `protected`, before any request to the Payload Manager (none is made); if the console cannot tell
+  whether an app runs, the request is refused too.
 - The Payload Manager must answer within 2 s in total (for start and stop the list lookup and the action together)
   with at most 256 KB of JSON; anything else counts as not reachable. `capabilities.payload_control` in `/info` is true when the last such call worked (false until the
   first one).
@@ -264,7 +269,7 @@ fields and endpoints go away in a later version.
 | 403 | `origin_forbidden`, `browser_guard`, `host_forbidden`, `address_forbidden`, `protected` | |
 | 404 | `not_found`, `not_installed`, `unknown_payload` | |
 | 405 | `method_not_allowed` | |
-| 409 | `no_code`, `code_exhausted`, `token_limit`, `other_app_running`, `no_user`, `title_mismatch`, `no_app`, `not_running`, `fan_above_stock`, `not_available`, `already_allowed`, `not_on`, `already_running` | |
+| 409 | `no_code`, `code_exhausted`, `token_limit`, `other_app_running`, `no_user`, `title_mismatch`, `no_app`, `not_running`, `fan_above_stock`, `not_available`, `already_allowed`, `not_on`, `already_running`, `app_running` | |
 | 411 | `length_required` (chunked body, or `POST` without `Content-Length`) | |
 | 413 | `body_too_large` (more than 4096 bytes) | |
 | 429 | `locked`, `rate_limited` | `retry_after` (seconds) |
