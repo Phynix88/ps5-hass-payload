@@ -6,7 +6,8 @@
 a console (the whole homebrew stack died and the console needed a forced power-off).
 
 - `POST /payloads/start` and `/payloads/stop` answer `409 app_running` while an app or game runs, without asking
-  the Payload Manager. A console that cannot tell is treated as running.
+  the Payload Manager. This uses the console's "running app": a game minimised with `/apps/running/suspend` counts
+  as not running (it is still in memory), so close the game before switching payloads.
 - CheatRunner (any payload with `cheat` in its name) and ps5debug are protected: never started or stopped here.
 
 ## v0.4.0

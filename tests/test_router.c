@@ -681,7 +681,7 @@ static void test_payloads_refused_while_app_runs(void) {
   fake.reads = fake.sony_calls = 0;
   T_EQ_INT(call("POST", "/api/v1/payloads/stop", "{\"slot\":\"repo/ftpsrv@e8cce5d1\"}"), 409);
   T_ASSERT(strstr(body, "\"error\":\"not_on\""));
-  T_EQ_INT(fake.sony_calls, 0);
+  T_EQ_INT(fake.sony_calls, 0);  T_EQ_INT(fake.reads, 0);
 }
 
 static void test_payloads_outside_on_leave_manager_alone(void) {

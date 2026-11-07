@@ -197,8 +197,12 @@ the same one its web page uses). It talks to it only when asked, never in the ba
   and never touches a payload that is attached to a running game.
 - Start and stop are refused with `409 app_running` (message "close the running game or app first") while an app or
   game runs (since v0.4.1). Stopping or starting a payload during a game hung a console. The check comes after
-  `not_on` and `protected`, before any request to the Payload Manager (none is made); if the console cannot tell
-  whether an app runs, the request is refused too.
+  `not_on` and `protected`, before any request to the Payload Manager (none is made). The check uses the same
+  "running app" as `/state.app`: the console reporting no app (or a failed read of it) counts as none, and only a
+  running app whose title id cannot be looked up counts as running. **A game minimised with
+  `POST /apps/running/suspend` counts as no app running**, because the console then reports none, so payloads can be
+  started and stopped while that game is still in memory. Close the game first; CheatRunner and ps5debug stay
+  protected either way.
 - The Payload Manager must answer within 2 s in total (for start and stop the list lookup and the action together)
   with at most 256 KB of JSON; anything else counts as not reachable. `capabilities.payload_control` in `/info` is true when the last such call worked (false until the
   first one).

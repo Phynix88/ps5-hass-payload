@@ -109,7 +109,8 @@ Everything lives in `/data/ps5-hass/` on the console (reachable via FTP, port 21
 - **Keep awake:** while switched on, the payload resets the console's auto power-down timer every 4 minutes. It does
   not stop rest mode started by a button or a request, and it is off again after a restart of the payload.
 - **Start and stop payloads:** through the Payload Manager's local interface, only when asked and only while no game
-  or app runs (otherwise `409 app_running`). kstuff, etaHEN, the ELF loader, the Payload Manager, ps5-hass itself,
+  or app runs (otherwise `409 app_running`; a game minimised with `/apps/running/suspend` counts as not running,
+  so close it first). kstuff, etaHEN, the ELF loader, the Payload Manager, ps5-hass itself,
   CheatRunner (any cheat payload) and ps5debug are protected and can be neither started nor stopped.
 - **Power off:** switching the console on again needs the power button (or the controller's PS button).
 - **Fan threshold:** the payload
