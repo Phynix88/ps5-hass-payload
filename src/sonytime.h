@@ -16,8 +16,8 @@
 /* Forget everything and allow a read at once. */
 void sonytime_reset(void);
 /* Reads the file when power_is_on() and the wait is over: PS5H_SONYTIME_REFRESH_S
- * after a good read, PS5H_SONYTIME_RETRY_S after a failed one (an attempt that
- * was skipped because the console is not "on" does not count). A failure keeps
+ * after a good read, PS5H_SONYTIME_RETRY_S after a failed one, doubled per
+ * failure in a row up to PS5H_SONYTIME_RETRY_MAX_S (an attempt that was skipped because the console is not "on" does not count). A failure keeps
  * the values of the last good read (Sony's number only grows) and the last
  * good app.db.copy. now_ms is the monotonic clock. 0 = read, 1 = skipped,
  * -1 = could not be read or does not look as expected. */

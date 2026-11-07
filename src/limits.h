@@ -60,6 +60,7 @@
 #define PS5H_PLAYTIME_DEFAULT_DAYS 8 /* GET /playtime without ?since= */
 #define PS5H_SONYTIME_REFRESH_S  3600 /* app.db is read at most this often */
 #define PS5H_SONYTIME_RETRY_S    60   /* after a failed read; kept values stay */
+#define PS5H_SONYTIME_RETRY_MAX_S 3600 /* doubled per failure in a row, up to this */
 #define PS5H_SONYTIME_MAX_COPY   (8 * 1024 * 1024) /* larger app.db = skipped */
 #define PS5H_SONYTIME_MAX_TITLES 4096
 #define PS5H_SOC_POWER_CACHE_S   10   /* SoC power is re-read at most this often */

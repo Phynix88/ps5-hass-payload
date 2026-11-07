@@ -37,6 +37,7 @@ static struct {
   int64_t last_ms; /* of the last attempt */
   int64_t next_ms; /* earliest next attempt */
   bool fail_logged; /* one log line per streak of failures */
+  int64_t retry_s; /* wait after the next failure; 0 = the first one */
 } st;
 
 static void clear_list(void) {
@@ -51,6 +52,7 @@ void sonytime_reset(void) {
   st.last_ms = 0;
   st.next_ms = 0;
   st.fail_logged = false;
+  st.retry_s = 0;
 }
 
 static int cmp_entry(const void *a, const void *b) {
@@ -283,12 +285,16 @@ int sonytime_refresh(int64_t now_ms) {
     why = read_db(attempt);
   }
   if (why) {
-    /* Sony's number only grows: what was read before stays. A short wait,
-     * and one log line per streak. */
+    /* Sony's number only grows: what was read before stays. A short wait
+     * that doubles per failure in a row, and one log line per streak. */
     if (attempt[0]) {
       unlink(attempt);
     }
-    st.next_ms = now_ms + (int64_t)PS5H_SONYTIME_RETRY_S * 1000;
+    st.retry_s = st.retry_s ? st.retry_s * 2 : PS5H_SONYTIME_RETRY_S;
+    if (st.retry_s > PS5H_SONYTIME_RETRY_MAX_S) {
+      st.retry_s = PS5H_SONYTIME_RETRY_MAX_S;
+    }
+    st.next_ms = now_ms + st.retry_s * 1000;
     if (!st.fail_logged) {
       log_msg("app.db: %s", why);
       st.fail_logged = true;
@@ -300,5 +306,6 @@ int sonytime_refresh(int64_t now_ms) {
   }
   st.next_ms = now_ms + (int64_t)PS5H_SONYTIME_REFRESH_S * 1000;
   st.fail_logged = false;
+  st.retry_s = 0;
   return 0;
 }

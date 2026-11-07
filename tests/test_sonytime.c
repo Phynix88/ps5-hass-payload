@@ -163,10 +163,10 @@ static void test_failure_keeps_values(void) {
   T_EQ_INT(sonytime_refresh(T0 + HOUR_MS + RETRY_MS), -1);
   T_EQ_INT(sonytime_of("PPSA00002"), 60);
   make_db("CREATE TABLE tbl_iconinfo_1a2b3c4d (titleId TEXT, x INT);");
-  T_EQ_INT(sonytime_refresh(T0 + HOUR_MS + 2 * RETRY_MS), -1); /* layout */
+  T_EQ_INT(sonytime_refresh(T0 + HOUR_MS + 3 * RETRY_MS), -1); /* layout */
   T_EQ_INT(sonytime_of("PPSA00002"), 60);
   make_db(ONE_USER(90)); /* and it recovers */
-  T_EQ_INT(sonytime_refresh(T0 + HOUR_MS + 3 * RETRY_MS), 0);
+  T_EQ_INT(sonytime_refresh(T0 + HOUR_MS + 7 * RETRY_MS), 0);
   T_EQ_INT(sonytime_of("PPSA00002"), 90);
 }
 
@@ -196,6 +196,30 @@ static void test_retry_after_60s(void) {
   T_EQ_INT(sonytime_of("PPSA00002"), 180);
 }
 
+/* Failures in a row wait longer each time: 60 s, doubled, at most an hour. A
+ * success starts over. */
+static void test_retry_backs_off(void) {
+  static const int waits[] = {60, 120, 240, 480, 960, 1920, 3600, 3600};
+  int64_t t = T0;
+  setup();
+  T_EQ_INT(PS5H_SONYTIME_RETRY_MAX_S, 3600);
+  T_EQ_INT(sonytime_refresh(t), -1); /* nothing there */
+  for (size_t i = 0; i < sizeof(waits) / sizeof(waits[0]); i++) {
+    T_EQ_INT(sonytime_refresh(t + waits[i] * 1000LL - 1), 1);
+    t += waits[i] * 1000LL;
+    T_EQ_INT(sonytime_refresh(t), -1);
+  }
+  make_db(ONE_USER(60));
+  t += 3600 * 1000LL;
+  T_EQ_INT(sonytime_refresh(t), 0);
+  unlink(db_path); /* a new streak starts with the short wait */
+  t += HOUR_MS;
+  T_EQ_INT(sonytime_refresh(t), -1);
+  make_db(ONE_USER(61));
+  T_EQ_INT(sonytime_refresh(t + RETRY_MS), 0);
+  T_EQ_INT(sonytime_of("PPSA00002"), 61);
+}
+
 /* A failed copy or read never replaces the last good app.db.copy. */
 static void test_failed_copy_keeps_old_copy(void) {
   size_t before_len = 0, after_len = 0;
@@ -221,7 +245,7 @@ static void test_failed_copy_keeps_old_copy(void) {
   free(before);
   /* a good read replaces it */
   make_db(ONE_USER(61));
-  T_EQ_INT(sonytime_refresh(T0 + HOUR_MS + 2 * RETRY_MS), 0);
+  T_EQ_INT(sonytime_refresh(T0 + HOUR_MS + 3 * RETRY_MS), 0);
   T_ASSERT(access(new_path, F_OK) != 0);
   T_EQ_INT(sonytime_of("PPSA00002"), 61);
 }
@@ -319,6 +343,7 @@ int main(void) {
   T_RUN(test_refresh_at_most_hourly);
   T_RUN(test_failure_keeps_values);
   T_RUN(test_retry_after_60s);
+  T_RUN(test_retry_backs_off);
   T_RUN(test_failed_copy_keeps_old_copy);
   T_RUN(test_size_cap);
   T_RUN(test_odd_table_names_ignored);

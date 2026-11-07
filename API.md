@@ -153,7 +153,7 @@ console, so the count survives restarts of the payload and has no gaps while Hom
   adds to game time). `console_total_s` is the console's own count of play time for the title (Sony's `playedTimeOnConsole`, seconds,
   summed over all console users); it is `null` when unknown: the title is not in Sony's data, has no value there, the
   console has not been `on` since the payload started, or the file has not been readable yet. Sony's file is copied to
-  `data/ps5-hass/app.db.copy` and read at most once an hour (a failed read is retried after a minute and keeps the last good values), only while the console is `on`. It is Sony's
+  `data/ps5-hass/app.db.copy` and read at most once an hour (a failed read keeps the last good values and is retried after a minute, then after twice as long per failure in a row, at most an hour), only while the console is `on`. It is Sony's
   number, not ours: it can differ from `total_s` (which only counts the foreground since the payload started
   counting).
 - `sessions`: finished sessions that end at or after `since`; `start` is Unix time (UTC, the console's clock),
