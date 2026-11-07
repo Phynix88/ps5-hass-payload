@@ -10,6 +10,7 @@
 #include "log.h"
 #include "perm.h"
 #include "platform.h"
+#include "power.h"
 
 #ifndef PS5H_VERSION
 #define PS5H_VERSION "dev"
@@ -32,11 +33,17 @@ static void storage(jw_t *w, const char *prefix, const char *path) {
   jw_opt_int(w, ok, total_mb);
 }
 
-void state_json(jw_t *w, const app_list *apps, int64_t start_ms) {
-  plat_running run;
-  bool in_app = plat_running_app(&run) == 1;
-  plat_opt_int cpu = plat_cpu_temp(), soc = plat_soc_temp(),
-               fan = plat_fan_raw();
+/* Outside "on" none of these is read: the console is left alone, every
+ * reading is null. */
+static void console_json(jw_t *w, const app_list *apps, bool read) {
+  plat_running run = {0};
+  bool in_app = read && plat_running_app(&run) == 1;
+  plat_opt_int cpu = {0}, soc = {0}, fan = {0};
+  if (read) {
+    cpu = plat_cpu_temp();
+    soc = plat_soc_temp();
+    fan = plat_fan_raw();
+  }
 
   jw_key(w, "in_app");
   jw_bool(w, in_app);
@@ -65,9 +72,27 @@ void state_json(jw_t *w, const app_list *apps, int64_t start_ms) {
   jw_opt_int(w, fan.ok, fan.value);
   jw_key(w, "storage");
   jw_obj(w);
-  storage(w, "data", "/data");
-  storage(w, "user", "/user");
+  if (read) {
+    storage(w, "data", "/data");
+    storage(w, "user", "/user");
+  } else {
+    static const char *const keys[] = {"data_free_mb", "data_total_mb",
+                                       "user_free_mb", "user_total_mb"};
+    for (int i = 0; i < 4; i++) {
+      jw_key(w, keys[i]);
+      jw_null(w);
+    }
+  }
   jw_end_obj(w);
+}
+
+void state_json(jw_t *w, const app_list *apps, int64_t start_ms) {
+  bool on = power_is_on();
+  console_json(w, apps, on);
+  jw_key(w, "power_state");
+  jw_cstr(w, power_state_name());
+  jw_key(w, "keep_awake");
+  jw_bool(w, power_keep_awake());
   jw_key(w, "uptime_s");
   jw_int(w, plat_uptime_s());
   jw_key(w, "payload_uptime_s");
@@ -76,7 +101,7 @@ void state_json(jw_t *w, const app_list *apps, int64_t start_ms) {
   jw_cstr(w, apps->etag);
   {
     plat_name names[PS5H_MAX_PAYLOADS];
-    int n = procs_payloads(names, PS5H_MAX_PAYLOADS);
+    int n = on ? procs_payloads(names, PS5H_MAX_PAYLOADS) : 0;
     jw_key(w, "payloads");
     jw_arr(w);
     for (int i = 0; i < n; i++) {

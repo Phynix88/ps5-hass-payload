@@ -12,6 +12,7 @@
 #include "json.h"
 #include "limits.h"
 #include "platform_fake.h"
+#include "power.h"
 #include "router.h"
 
 static config cfg;
@@ -33,6 +34,7 @@ static void setup(void) {
   config_load(&cfg);
   auth_init(&cfg);
   control_init();
+  power_init();
   apps_free(&apps);
   memset(&ctx, 0, sizeof(ctx));
   ctx.cfg = &cfg;
@@ -482,6 +484,66 @@ static void test_fan_codes(void) {
 
 /* --- v0.3 grant endpoints: compatibility answers ------------------------- */
 
+static void test_keep_awake_toggle(void) {
+  setup();
+  T_EQ_INT(call("POST", "/api/v1/keep_awake", "{\"on\":true}"), 401);
+  pair();
+  T_EQ_INT(call("GET", "/api/v1/state", NULL), 200);
+  T_ASSERT(strstr(body, "\"keep_awake\":false"));
+  T_EQ_INT(call("POST", "/api/v1/keep_awake", "{\"on\":true}"), 200);
+  T_EQ_STR(body, "{\"result\":\"ok\",\"keep_awake\":true}");
+  T_ASSERT(power_keep_awake());
+  T_EQ_INT(call("GET", "/api/v1/state", NULL), 200);
+  T_ASSERT(strstr(body, "\"keep_awake\":true"));
+  T_EQ_INT(call("POST", "/api/v1/keep_awake", "{\"on\":false}"), 200);
+  T_ASSERT(strstr(body, "\"keep_awake\":false"));
+  T_ASSERT(!power_keep_awake());
+  T_EQ_INT(call("POST", "/api/v1/keep_awake", "{\"on\":1}"), 400);
+  T_EQ_INT(call("POST", "/api/v1/keep_awake", "{}"), 400);
+  T_EQ_INT(call("GET", "/api/v1/keep_awake", NULL), 405);
+  T_EQ_INT(fake.keep_awake_calls, 0); /* switching does not call the console */
+}
+
+static void test_keep_awake_unavailable_409(void) {
+  setup();
+  pair();
+  fake.caps.keep_awake = false;
+  T_EQ_INT(call("POST", "/api/v1/keep_awake", "{\"on\":true}"), 409);
+  T_ASSERT(strstr(body, "\"error\":\"not_available\""));
+  T_ASSERT(!power_keep_awake());
+}
+
+static void test_state_has_power_state(void) {
+  setup();
+  pair();
+  power_tick(fake.mono_ms);
+  T_EQ_INT(call("GET", "/api/v1/state", NULL), 200);
+  T_ASSERT(strstr(body, "\"power_state\":\"on\""));
+  T_ASSERT(strstr(body, "\"cpu\":41"));
+}
+
+static void test_state_outside_on_leaves_console_alone(void) {
+  setup();
+  pair();
+  fake.running = (plat_running){.app_id = 7, .title_id = "PPSA00001"};
+  fake.n_procs = 1;
+  strcpy(fake.procs[0], "x.elf");
+  fake.power_state = 500;
+  power_tick(fake.mono_ms);
+  fake.reads = fake.sony_calls = 0;
+  T_EQ_INT(call("GET", "/api/v1/state", NULL), 200);
+  T_EQ_INT(fake.reads, 0);
+  T_EQ_INT(fake.sony_calls, 0);
+  T_ASSERT(strstr(body, "\"power_state\":\"rest\""));
+  T_ASSERT(strstr(body, "\"in_app\":false,\"app\":null"));
+  T_ASSERT(strstr(body, "\"temps\":{\"cpu\":null,\"soc\":null}"));
+  T_ASSERT(strstr(body, "\"fan_raw\":null"));
+  T_ASSERT(strstr(body, "\"data_free_mb\":null,\"data_total_mb\":null,"
+                        "\"user_free_mb\":null,\"user_total_mb\":null"));
+  T_ASSERT(strstr(body, "\"payloads\":[]"));
+  T_ASSERT(strstr(body, "\"uptime_s\":100"));
+}
+
 static void test_grant_start_answers_already_allowed(void) {
   int shown;
   setup();
@@ -564,6 +626,10 @@ int main(void) {
   T_RUN(test_power_off_codes);
   T_RUN(test_power_off_unavailable_409);
   T_RUN(test_fan_codes);
+  T_RUN(test_keep_awake_toggle);
+  T_RUN(test_keep_awake_unavailable_409);
+  T_RUN(test_state_has_power_state);
+  T_RUN(test_state_outside_on_leaves_console_alone);
   T_RUN(test_grant_start_answers_already_allowed);
   T_RUN(test_grant_finish_answers_no_code);
   T_RUN(test_grant_revoke_is_noop_200);

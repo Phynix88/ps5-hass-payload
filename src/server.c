@@ -19,6 +19,7 @@
 #include "log.h"
 #include "mdns.h"
 #include "platform.h"
+#include "power.h"
 
 #define IN_CAP (PS5H_MAX_HEADER + PS5H_MAX_BODY + 1)
 #define MAX_IFACES 8
@@ -213,7 +214,9 @@ static void rebind(server *s, int64_t now, bool drop_conns, bool is_error,
 }
 
 static void periodic(server *s, int64_t now) {
-  int64_t off = clock_offset();
+  int64_t off;
+  power_tick(now); /* first: every other module asks power_is_on() */
+  off = clock_offset();
   int64_t gap = now - s->last_step_ms;
   s->last_step_ms = now;
   /* Two signs of waking up: the wall clock jumped against the monotonic one,

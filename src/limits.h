@@ -46,6 +46,7 @@
 #define PS5H_FAN_CHECK_S         5
 #define PS5H_FAN_MAX_FAILS       5
 #define PS5H_MAX_PROCS           512 /* process names read per scan */
+#define PS5H_KEEP_AWAKE_S        240 /* keep-awake tick, below the 5 min limit */
 #define PS5H_DATA_DIR            "/data/ps5-hass"
 
 #endif

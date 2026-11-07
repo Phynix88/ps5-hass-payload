@@ -13,6 +13,7 @@
 #include "json.h"
 #include "limits.h"
 #include "platform.h"
+#include "power.h"
 
 #define MAX_TOKENS 8192
 
@@ -238,6 +239,18 @@ int apps_current_etag(char out[17]) {
   return 0;
 }
 
+/* Set when the last scan could not ask the console for the language. */
+static bool names_without_language;
+
+/* -1 (no language) outside "on": the console is not asked then. */
+static int language(void) {
+  if (!power_is_on()) {
+    names_without_language = true;
+    return -1;
+  }
+  return plat_language();
+}
+
 static void read_param(const source *s, app_t *a) {
   char p[760];
   struct stat st;
@@ -254,7 +267,7 @@ static void read_param(const source *s, app_t *a) {
   if ((buf = malloc((size_t)st.st_size + 1))) {
     n = read(fd, buf, (size_t)st.st_size);
     if (n > 0) {
-      apps_parse_param(buf, (size_t)n, plat_language(), a);
+      apps_parse_param(buf, (size_t)n, language(), a);
     }
     free(buf);
   }
@@ -289,6 +302,7 @@ int apps_scan(app_list *out) {
   id_set *set = collect_ids();
   uint64_t h = FNV_INIT;
   memset(out, 0, sizeof(*out));
+  names_without_language = false;
   if (!set) {
     return -1;
   }
@@ -337,10 +351,13 @@ const app_t *apps_find(const app_list *list, const char *title_id) {
 int apps_refresh(app_list *list) {
   char e[17];
   app_list fresh;
+  if (!power_is_on()) {
+    return 0; /* no scan outside "on"; it catches up afterwards */
+  }
   if (apps_current_etag(e)) {
     return -1;
   }
-  if (list->items && !strcmp(e, list->etag)) {
+  if (list->items && !names_without_language && !strcmp(e, list->etag)) {
     return 0;
   }
   if (apps_scan(&fresh)) {

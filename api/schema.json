@@ -292,6 +292,18 @@
         },
         "fan": {
           "$ref": "#/$defs/fan_state"
+        },
+        "power_state": {
+          "enum": [
+            "on",
+            "going_to_rest",
+            "rest",
+            "shutting_down",
+            "unknown"
+          ]
+        },
+        "keep_awake": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -305,7 +317,9 @@
         "payload_uptime_s",
         "apps_etag",
         "payloads",
-        "fan"
+        "fan",
+        "power_state",
+        "keep_awake"
       ],
       "additionalProperties": false
     },
@@ -539,6 +553,22 @@
       "required": [
         "result",
         "permissions"
+      ],
+      "additionalProperties": false
+    },
+    "keep_awake": {
+      "type": "object",
+      "properties": {
+        "result": {
+          "const": "ok"
+        },
+        "keep_awake": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "result",
+        "keep_awake"
       ],
       "additionalProperties": false
     }

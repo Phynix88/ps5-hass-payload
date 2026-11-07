@@ -17,6 +17,8 @@
 #include "log.h"
 #include "mdns.h"
 #include "perm.h"
+#include "platform.h"
+#include "power.h"
 #include "state.h"
 
 #define PREFIX "/api/v1"
@@ -206,6 +208,7 @@ typedef enum {
   R_NOTIFY,
   R_POWER_OFF,
   R_FAN,
+  R_KEEP_AWAKE,
   R_GRANT_START,
   R_GRANT_FINISH,
   R_GRANT_REVOKE
@@ -230,6 +233,7 @@ static route_id match(const char *path, http_method *want, char *id,
       {PREFIX "/notify", HM_POST, R_NOTIFY},
       {PREFIX "/power/off", HM_POST, R_POWER_OFF},
       {PREFIX "/fan", HM_POST, R_FAN},
+      {PREFIX "/keep_awake", HM_POST, R_KEEP_AWAKE},
       {PREFIX "/grant/start", HM_POST, R_GRANT_START},
       {PREFIX "/grant/finish", HM_POST, R_GRANT_FINISH},
       {PREFIX "/grant/revoke", HM_POST, R_GRANT_REVOKE},
@@ -560,6 +564,24 @@ static void h_fan(route_ctx *ctx, const jr_t *r, route_resp *out) {
   }
 }
 
+static void h_keep_awake(const jr_t *r, route_resp *out) {
+  bool on;
+  jw_t *w;
+  if (!plat_capabilities().keep_awake) {
+    fail(out, 409, "not_available", "the console cannot do this");
+    return;
+  }
+  if (!jr_bool(r, jr_get(r, 0, "on"), &on)) {
+    fail(out, 400, "bad_request", "on must be true or false");
+    return;
+  }
+  power_set_keep_awake(on);
+  w = ok(out);
+  jw_key(w, "keep_awake");
+  jw_bool(w, power_keep_awake());
+  done(out);
+}
+
 static void h_power_off(route_ctx *ctx, route_resp *out) {
   int rc = 0;
   switch (control_power_off(ctx->cfg, &rc)) {
@@ -695,6 +717,7 @@ void route(route_ctx *ctx, const http_req *req, uint32_t peer,
   case R_NOTIFY: h_notify(&body, out); break;
   case R_POWER_OFF: h_power_off(ctx, out); break;
   case R_FAN: h_fan(ctx, &body, out); break;
+  case R_KEEP_AWAKE: h_keep_awake(&body, out); break;
   case R_GRANT_START: h_grant_start(out); break;
   case R_GRANT_FINISH: h_grant_finish(out); break;
   case R_GRANT_REVOKE: h_grant_revoke(out); break;

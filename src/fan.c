@@ -7,6 +7,7 @@
 #include "limits.h"
 #include "log.h"
 #include "platform.h"
+#include "power.h"
 
 static struct {
   int current;      /* last value read, -1 = unknown */
@@ -58,6 +59,9 @@ void fan_init(config *c) {
   int v;
   memset(&st, 0, sizeof(st));
   st.current = -1;
+  if (!power_is_on()) {
+    return; /* the console is not asked outside "on" */
+  }
   if ((v = read_value()) >= 0 && !c->fan_stock_c && plausible_stock(v) &&
       v != c->fan_target_c && v != c->fan_written_c) {
     /* the console's own value: not our target, not anything we wrote */
@@ -123,6 +127,9 @@ static bool fighting(int64_t now_ms) {
 
 void fan_tick(config *c, int64_t now_ms) {
   int v;
+  if (!power_is_on()) {
+    return;
+  }
   if (st.last_check_ms && now_ms - st.last_check_ms < PS5H_FAN_CHECK_S * 1000) {
     return;
   }

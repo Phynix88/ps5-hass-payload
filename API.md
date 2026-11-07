@@ -69,6 +69,7 @@ There are no CORS headers.
 | `POST /power/off` | yes | power off (not rest mode; since v0.2); shares the 10 s limit with standby |
 | `POST /notify` | yes | body `{"message":"Dinner is ready"}`: shown as a notification on the TV (UTF-8, cut to 200 bytes, control characters removed); at most 5 per 30 s (since v0.2) |
 | `POST /fan` | yes | body `{"threshold_c":70}` (45..85) or `{"threshold_c":0}` (back to the console's own value); answer `{"fan":{…}}` (since v0.2) |
+| `POST /keep_awake` | yes | body `{"on":true}`; answer `{"keep_awake":true}`. While on, the payload resets the console's auto power-down timer every 240 s. Without `capabilities.keep_awake`: `409 not_available`. The setting lives in memory only (off after a payload restart) and does not stop rest mode started by a button or a request (since v0.4) |
 | `POST /grant/start` | yes | compatibility only: always `409 already_allowed` (see [Permissions](#permissions-removed-in-v04)) |
 | `POST /grant/finish` | yes | compatibility only: always `409 no_code` |
 | `POST /grant/revoke` | yes | compatibility only: `200` with `{"permissions":{…}}`, nothing is revoked |
@@ -82,7 +83,8 @@ Success answers carry `"result":"ok"`. `<ID>` must match `^[A-Z]{4}[0-9]{5}$`.
  "app":{"title_id":"PPSA96708","name":"Hikari","app_id":24},
  "temps":{"cpu":41,"soc":38},"fan_raw":131,
  "storage":{"data_free_mb":76731,"data_total_mb":838000,"user_free_mb":76731,"user_total_mb":838000},
- "uptime_s":284,"payload_uptime_s":120,"apps_etag":"8c1f…"}
+ "uptime_s":284,"payload_uptime_s":120,"apps_etag":"8c1f…",
+ "power_state":"on","keep_awake":false}
 ```
 
 - `app` is `null` when nothing runs.
@@ -95,6 +97,14 @@ Success answers carry `"result":"ok"`. `<ID>` must match `^[A-Z]{4}[0-9]{5}$`.
   processes left out; names longer than 19 characters are cut by the kernel.
 - `fan` (since v0.2): `{"target_c": …, "current_c": …, "stock_c": …}` – our target (null = the console's own),
   the value the fan driver uses now, and the console's factory value (91 °C on FW 13.60), each null when unknown.
+- `power_state` (since v0.4): `on`, `going_to_rest`, `rest`, `shutting_down` or `unknown` (no reading, or a value
+  that is not known). `keep_awake` (since v0.4): whether `POST /keep_awake` is on.
+- **Nothing is read from the console while `power_state` is not `on`.** The payload then calls no console function
+  except the one that reports the power state. A `/state` answer in that time has `in_app` false, `app` null, `temps`, `fan_raw` and all
+  `storage` values null and `payloads` empty; `uptime_s`, `payload_uptime_s`, `apps_etag` (the last known one) and
+  `fan` (the last known values) come from memory or the clock. The fan watcher, the app rescan and keep-awake pause
+  too, and continue when the state is `on` again. A console that cannot report its power state counts as `on`.
+  Requests that act on the console (launch, close, rest mode, power off, notify, fan) are not blocked.
 
 ### Fan threshold (since v0.2)
 

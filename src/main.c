@@ -13,6 +13,7 @@
 #include "log.h"
 #include "mdns.h"
 #include "platform.h"
+#include "power.h"
 #include "router.h"
 #include "server.h"
 
@@ -45,6 +46,8 @@ int main(void) {
   }
   auth_init(&cfg);
   control_init();
+  power_init();
+  power_tick(plat_mono_ms());
   fan_init(&cfg);
   apps_scan(&apps);
 

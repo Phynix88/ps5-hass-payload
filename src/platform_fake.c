@@ -51,6 +51,9 @@ void fake_init_from_env(void) {
   if (root) {
     snprintf(fake.root, sizeof(fake.root), "%s", root);
   }
+  if (getenv("PS5HASS_FAKE_POWER_STATE")) {
+    fake.power_state = atoi(getenv("PS5HASS_FAKE_POWER_STATE"));
+  }
   if (getenv("PS5HASS_FAKE_NO_USER")) {
     fake.user_rc = -1;
     fake.user_id = 0;
@@ -84,6 +87,7 @@ int plat_random(uint8_t *buf, size_t n) {
 }
 
 int plat_notify(const char *ascii) {
+  fake.reads++;
   if (fake.notify_rc < 0) {
     return fake.notify_rc;
   }
@@ -104,6 +108,7 @@ int plat_notify(const char *ascii) {
 }
 
 int plat_running_app(plat_running *out) {
+  fake.reads++;
   if (fake.running.app_id <= 0) {
     return 0;
   }
@@ -123,6 +128,7 @@ static bool installed(const char *title_id) {
 }
 
 int plat_launch(const char *title_id) {
+  fake.reads++;
   if (fake.launch_rc < 0) {
     return fake.launch_rc;
   }
@@ -136,6 +142,7 @@ int plat_launch(const char *title_id) {
 }
 
 int plat_kill_app(int app_id) {
+  fake.reads++;
   if (fake.kill_rc < 0) {
     return fake.kill_rc;
   }
@@ -146,21 +153,36 @@ int plat_kill_app(int app_id) {
 }
 
 int plat_foreground_user(uint32_t *user) {
+  fake.reads++;
   *user = fake.user_id;
   return fake.user_rc;
 }
 
 int plat_standby(void) {
+  fake.reads++;
   fake.standby_calls++;
   return fake.standby_rc;
 }
 
-plat_opt_int plat_cpu_temp(void) { return fake.cpu; }
-plat_opt_int plat_soc_temp(void) { return fake.soc; }
-plat_opt_int plat_fan_raw(void) { return fake.fan; }
-int plat_language(void) { return fake.language; }
+plat_opt_int plat_cpu_temp(void) {
+  fake.reads++;
+  return fake.cpu;
+}
+plat_opt_int plat_soc_temp(void) {
+  fake.reads++;
+  return fake.soc;
+}
+plat_opt_int plat_fan_raw(void) {
+  fake.reads++;
+  return fake.fan;
+}
+int plat_language(void) {
+  fake.reads++;
+  return fake.language;
+}
 
 int plat_storage_mb(const char *path, int64_t *free_mb, int64_t *total_mb) {
+  fake.reads++;
   (void)path;
   if (fake.storage_rc < 0) {
     return fake.storage_rc;
@@ -183,11 +205,13 @@ plat_caps plat_capabilities(void) { return fake.caps; }
 
 int plat_proc_names(plat_name *names, int max) {
   int n = fake.n_procs < max ? fake.n_procs : max;
+  fake.reads++;
   memcpy(names, fake.procs, (size_t)n * sizeof(plat_name));
   return n;
 }
 
 int plat_fan_get(int *target_c) {
+  fake.reads++;
   if (fake.fan_get_rc < 0) {
     return fake.fan_get_rc;
   }
@@ -196,6 +220,7 @@ int plat_fan_get(int *target_c) {
 }
 
 int plat_fan_set(int target_c) {
+  fake.reads++;
   fake.fan_set_calls++;
   if (fake.fan_set_rc < 0) {
     return fake.fan_set_rc;
@@ -205,6 +230,7 @@ int plat_fan_set(int target_c) {
 }
 
 int plat_power_off(void) {
+  fake.reads++;
   fake.power_off_calls++;
   return fake.power_off_rc;
 }
@@ -224,6 +250,7 @@ int plat_focused_app(int *app_id) {
     return -1;
   }
   fake.sony_calls++;
+  fake.reads++;
   fake.focused_app_calls++;
   if (fake.focused_app_rc < 0) {
     return fake.focused_app_rc;
@@ -237,6 +264,7 @@ int plat_suspend_app(int app_id) {
     return -1;
   }
   fake.sony_calls++;
+  fake.reads++;
   fake.suspend_calls++;
   fake.suspended_app_id = app_id;
   return fake.suspend_rc;
@@ -247,6 +275,7 @@ int plat_keep_awake(void) {
     return -1;
   }
   fake.sony_calls++;
+  fake.reads++;
   fake.keep_awake_calls++;
   return fake.keep_awake_rc;
 }
@@ -257,6 +286,7 @@ int plat_soc_power_read(plat_soc_power *out) {
     return -1;
   }
   fake.sony_calls++;
+  fake.reads++;
   fake.soc_power_calls++;
   if (fake.soc_power_rc < 0) {
     return fake.soc_power_rc;
@@ -268,6 +298,7 @@ int plat_soc_power_read(plat_soc_power *out) {
 int plat_title_of(int app_id, char title_id[10]) {
   const char *t = fake.title_id;
   fake.sony_calls++;
+  fake.reads++;
   fake.title_of_calls++;
   if (fake.title_of_rc < 0) {
     return fake.title_of_rc;

@@ -327,6 +327,37 @@ def test_power_and_fan_allowed_after_pairing(paired):
     validate("error", doc)
 
 
+def test_keep_awake_switch(paired):
+    state = paired.get("/api/v1/state")[1]
+    validate("state", state)
+    assert state["power_state"] == "on" and state["keep_awake"] is False
+    assert paired.get("/api/v1/info")[1]["capabilities"]["keep_awake"] is True
+    status, doc, _ = paired.post("/api/v1/keep_awake", {"on": True})
+    assert status == 200 and doc == {"result": "ok", "keep_awake": True}
+    validate("keep_awake", doc)
+    assert paired.get("/api/v1/state")[1]["keep_awake"] is True
+    status, doc, _ = paired.post("/api/v1/keep_awake", {"on": "yes"})
+    assert status == 400
+    validate("error", doc)
+    status, doc, _ = paired.post("/api/v1/keep_awake", {"on": False})
+    assert status == 200 and doc["keep_awake"] is False
+
+
+def test_state_while_resting_has_no_readings(tmp_path):
+    c = Console(tmp_path, env_extra={"PS5HASS_FAKE_POWER_STATE": "500"})
+    try:
+        c.pair()
+        state = c.get("/api/v1/state")[1]
+        validate("state", state)
+        assert state["power_state"] == "rest"
+        assert state["in_app"] is False and state["app"] is None
+        assert state["temps"] == {"cpu": None, "soc": None}
+        assert state["fan_raw"] is None and state["payloads"] == []
+        assert all(v is None for v in state["storage"].values())
+    finally:
+        c.stop()
+
+
 def test_old_permission_keys_in_config_are_ignored(tmp_path):
     c = Console(tmp_path, config_extra={"power_actions": False, "power_off": False,
                                         "fan_control": False})
