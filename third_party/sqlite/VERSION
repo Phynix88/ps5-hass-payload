@@ -1,0 +1,7 @@
+SQLite 3.54.1 amalgamation (sqlite3.c, sqlite3.h), unmodified.
+Source:   https://sqlite.org/2026/sqlite-amalgamation-3540100.zip
+SHA3-256: 92281c86e2957f9b9305890f9ac04204caa7b677cc868dc326d942689df28e30
+          (as listed on https://sqlite.org/download.html, verified)
+License:  public domain (https://sqlite.org/copyright.html)
+Compile options: see Makefile and Makefile.host (SQLITE_OMIT_LOAD_EXTENSION,
+SQLITE_THREADSAFE=0, SQLITE_DEFAULT_MEMSTATUS=0, ...).
