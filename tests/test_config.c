@@ -25,7 +25,7 @@ static void test_missing_config_defaults(void) {
   T_EQ_INT(c.port, PS5H_DEFAULT_PORT);
   T_EQ_INT(c.n_tokens, 0);
   T_EQ_INT(c.n_allow, 0);
-  T_ASSERT(!c.allow_broken && !c.power_actions && !c.recovered);
+  T_ASSERT(!c.allow_broken && !c.recovered);
 }
 
 static void test_broken_config_renamed_and_notified(void) {
@@ -58,7 +58,7 @@ static void test_valid_fields_loaded(void) {
   setup();
   snprintf(buf, sizeof(buf),
            "{\"schema\":1,\"port\":8182,\"allow\":[\"192.0.2.0/24\","
-           "\"10.0.0.5\"],\"hosts\":[\"ps5.lan\"],\"power_actions\":true,"
+           "\"10.0.0.5\"],\"hosts\":[\"ps5.lan\"],"
            "\"tokens\":[{\"token\":\"%s\",\"client_id\":"
            "\"0b7e2f1c-1111-4222-8333-944445555666\",\"label\":\"Home "
            "Assistant\",\"created\":\"2026-11-06T13:00:00Z\",\"last_used\":"
@@ -66,7 +66,7 @@ static void test_valid_fields_loaded(void) {
            TOKEN64);
   t_write_str(cfg_path, buf);
   T_EQ_INT(config_load(&c), 0);
-  T_ASSERT(!c.recovered && !c.allow_broken && c.power_actions);
+  T_ASSERT(!c.recovered && !c.allow_broken);
   T_EQ_INT(c.port, 8182);
   T_EQ_INT(c.n_allow, 2);
   T_EQ_INT(c.allow[0].net, 0xc0000200); /* host byte order */
@@ -119,7 +119,6 @@ static void test_save_load_roundtrip(void) {
   setup();
   T_EQ_INT(config_load(&c), 0);
   c.port = 8182;
-  c.power_actions = true;
   c.n_tokens = 1;
   snprintf(c.tokens[0].token, sizeof(c.tokens[0].token), "%s", TOKEN64);
   snprintf(c.tokens[0].client_id, sizeof(c.tokens[0].client_id),
@@ -131,7 +130,6 @@ static void test_save_load_roundtrip(void) {
   T_ASSERT(strstr(t_read(cfg_path), "\"created\":\"2026-11-06T13:00:00Z\""));
   T_EQ_INT(config_load(&d), 0);
   T_EQ_INT(d.port, 8182);
-  T_ASSERT(d.power_actions);
   T_EQ_INT(d.n_tokens, 1);
   T_EQ_STR(d.tokens[0].label, "K\xc3\xbc" "che");
   T_EQ_INT(d.tokens[0].last_used, 1793973600);
@@ -222,26 +220,39 @@ static void test_log_error_kept(void) {
   T_ASSERT(strstr(log_last_error(), "bind failed rc=-5"));
 }
 
-static void test_config_new_fields_default_false(void) {
+static void test_config_new_fields_default(void) {
   config c, d;
   setup();
   T_EQ_INT(config_load(&c), 0);
-  T_ASSERT(!c.power_off && !c.fan_control);
   T_EQ_INT(c.fan_target_c, 0);
   T_EQ_INT(c.fan_stock_c, 0);
-  c.power_off = true;
-  c.fan_control = true;
   c.fan_target_c = 70;
   c.fan_stock_c = 91;
   T_EQ_INT(config_save(&c), 0);
   T_EQ_INT(config_load(&d), 0);
-  T_ASSERT(d.power_off && d.fan_control);
   T_EQ_INT(d.fan_target_c, 70);
   T_EQ_INT(d.fan_stock_c, 91);
   t_write_str(cfg_path, "{\"schema\":1,\"fan_target_c\":200,\"fan_stock_c\":-3}");
   T_EQ_INT(config_load(&d), 0);
   T_EQ_INT(d.fan_target_c, 0);
   T_EQ_INT(d.fan_stock_c, 0);
+}
+
+static void test_old_permission_keys_ignored_and_dropped(void) {
+  config c;
+  const char *saved;
+  setup();
+  t_write_str(cfg_path, "{\"schema\":1,\"port\":8182,\"power_actions\":true,"
+                        "\"power_off\":true,\"fan_control\":true}");
+  T_EQ_INT(config_load(&c), 0);
+  T_ASSERT(!c.recovered);
+  T_EQ_INT(c.port, 8182); /* the rest of the file is still read */
+  T_EQ_INT(config_save(&c), 0);
+  saved = t_read(cfg_path);
+  T_ASSERT(strstr(saved, "\"port\":8182"));
+  T_ASSERT(!strstr(saved, "power_actions"));
+  T_ASSERT(!strstr(saved, "power_off"));
+  T_ASSERT(!strstr(saved, "fan_control"));
 }
 
 int main(void) {
@@ -259,6 +270,7 @@ int main(void) {
   T_RUN(test_device_id_without_random_fails);
   T_RUN(test_log_rotates_at_limit);
   T_RUN(test_log_error_kept);
-  T_RUN(test_config_new_fields_default_false);
+  T_RUN(test_config_new_fields_default);
+  T_RUN(test_old_permission_keys_ignored_and_dropped);
   T_MAIN();
 }

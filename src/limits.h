@@ -20,7 +20,6 @@
 #define PS5H_GLOBAL_MAX_FAILS    10
 #define PS5H_LOCK_BASE_S         900
 #define PS5H_LOCK_MAX_S          86400
-#define PS5H_GRANT_LABEL_MAX_BYTES 40 /* label in the grant text on the TV */
 #define PS5H_LAST_USED_WRITE_S   600
 #define PS5H_STANDBY_INTERVAL_S  10
 #define PS5H_PARAM_MAX           65536

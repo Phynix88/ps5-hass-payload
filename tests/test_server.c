@@ -389,7 +389,6 @@ static void test_server_bind_busy_retries_and_notifies_once(void) {
 static void test_fan_tick_runs(void) {
   int rc;
   server *s = setup(0);
-  cfg.fan_control = true;
   fake.fan_value = 91;
   fan_init(&cfg);
   fan_set(&cfg, 70, &rc);

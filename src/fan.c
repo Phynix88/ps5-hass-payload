@@ -82,8 +82,8 @@ void fan_init(config *c) {
 fan_rc fan_set(config *c, int target_c, int *rc_out) {
   int rc;
   *rc_out = 0;
-  if (!c->fan_control) {
-    return FAN_DISABLED;
+  if (!plat_capabilities().fan_control) {
+    return FAN_UNAVAILABLE;
   }
   if (target_c != 0 && (target_c < PS5H_FAN_MIN_C || target_c > PS5H_FAN_MAX_C)) {
     return FAN_BAD_VALUE;
@@ -128,7 +128,7 @@ void fan_tick(config *c, int64_t now_ms) {
   }
   st.last_check_ms = now_ms;
   v = read_value(); /* always: /state shows the value in use (reading is harmless) */
-  if (!c->fan_control || !c->fan_target_c || st.gave_up || v < 0 ||
+  if (!c->fan_target_c || st.gave_up || v < 0 ||
       v == c->fan_target_c) {
     return;
   }
@@ -156,25 +156,10 @@ void fan_json(jw_t *w, const config *c) {
   jw_key(w, "fan");
   jw_obj(w);
   jw_key(w, "target_c");
-  jw_opt_int(w, c->fan_control && c->fan_target_c > 0, c->fan_target_c);
+  jw_opt_int(w, c->fan_target_c > 0, c->fan_target_c);
   jw_key(w, "current_c");
   jw_opt_int(w, st.current >= 0, st.current);
   jw_key(w, "stock_c");
   jw_opt_int(w, c->fan_stock_c > 0, c->fan_stock_c);
   jw_end_obj(w);
-}
-
-void fan_release(config *c) {
-  bool other_tool = st.gave_up;
-  reset_watch();
-  if (other_tool) {
-    /* another tool controls the fan: leave its value alone */
-    log_msg("fan: control given up, threshold left to the other tool");
-    return;
-  }
-  if (c->fan_stock_c && write_value(c, c->fan_stock_c) >= 0) {
-    log_msg("fan: threshold %d C (factory value)", c->fan_stock_c);
-    return;
-  }
-  log_error("fan: threshold stays until the console resets it");
 }

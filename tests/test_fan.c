@@ -11,11 +11,10 @@
 
 static config cfg;
 
-static void setup(bool enabled, int device_value) {
+static void setup(int device_value) {
   fake_reset();
   snprintf(fake.root, sizeof(fake.root), "%s", t_tmpdir());
   config_load(&cfg);
-  cfg.fan_control = enabled;
   fake.fan_value = device_value;
   fan_init(&cfg);
 }
@@ -25,16 +24,24 @@ static void tick(int seconds) {
   fan_tick(&cfg, fake.mono_ms);
 }
 
-static void test_fan_disabled(void) {
+static void test_fan_set_allowed_without_config(void) {
   int rc;
-  setup(false, 91);
-  T_EQ_INT(fan_set(&cfg, 70, &rc), FAN_DISABLED);
+  setup(91); /* fresh config: no permission switch anywhere */
+  T_EQ_INT(fan_set(&cfg, 70, &rc), FAN_OK);
+  T_EQ_INT(fake.fan_value, 70);
+}
+
+static void test_fan_unavailable(void) {
+  int rc;
+  setup(91);
+  fake.caps.fan_control = false;
+  T_EQ_INT(fan_set(&cfg, 70, &rc), FAN_UNAVAILABLE);
   T_EQ_INT(fake.fan_set_calls, 0);
 }
 
 static void test_fan_learns_stock_once(void) {
   config d;
-  setup(true, 91);
+  setup(91);
   T_EQ_INT(cfg.fan_stock_c, 91);
   config_load(&d);
   T_EQ_INT(d.fan_stock_c, 91); /* saved */
@@ -48,7 +55,6 @@ static void test_fan_stock_not_overwritten_by_own_target(void) {
   fake_reset();
   snprintf(fake.root, sizeof(fake.root), "%s", t_tmpdir());
   config_load(&cfg);
-  cfg.fan_control = true;
   cfg.fan_target_c = 70; /* payload restarted while our 70 is still set */
   fake.fan_value = 70;
   fan_init(&cfg);
@@ -59,7 +65,7 @@ static void test_fan_stock_not_overwritten_by_own_target(void) {
 
 static void test_fan_range_and_above_stock(void) {
   int rc;
-  setup(true, 80); /* a board whose factory value is 80 */
+  setup(80); /* a board whose factory value is 80 */
   T_EQ_INT(fan_set(&cfg, 44, &rc), FAN_BAD_VALUE);
   T_EQ_INT(fan_set(&cfg, 86, &rc), FAN_BAD_VALUE);
   T_EQ_INT(fan_set(&cfg, 81, &rc), FAN_ABOVE_STOCK);
@@ -71,7 +77,7 @@ static void test_fan_range_and_above_stock(void) {
 
 static void test_fan_reset_to_stock(void) {
   int rc;
-  setup(true, 91);
+  setup(91);
   T_EQ_INT(fan_set(&cfg, 70, &rc), FAN_OK);
   T_EQ_INT(fake.fan_value, 70);
   T_EQ_INT(fan_set(&cfg, 0, &rc), FAN_OK);
@@ -84,7 +90,7 @@ static void test_fan_reset_to_stock(void) {
 
 static void test_fan_tick_restores_after_console_reset(void) {
   int rc, calls;
-  setup(true, 91);
+  setup(91);
   fan_set(&cfg, 70, &rc);
   calls = fake.fan_set_calls;
   tick(2);
@@ -97,7 +103,7 @@ static void test_fan_tick_restores_after_console_reset(void) {
 
 static void test_fan_other_tool_stops(void) {
   int rc, calls;
-  setup(true, 91);
+  setup(91);
   fan_set(&cfg, 70, &rc);
   calls = fake.fan_set_calls;
   fake.fan_value = 75; /* ps5upload or etaHEN set their own */
@@ -113,7 +119,7 @@ static void test_fan_other_tool_stops(void) {
 
 static void test_fan_gives_up_after_5_failures(void) {
   int rc, calls;
-  setup(true, 91);
+  setup(91);
   fan_set(&cfg, 70, &rc);
   fake.fan_value = 91;
   fake.fan_set_rc = -1;
@@ -129,7 +135,7 @@ static void test_fan_gives_up_after_5_failures(void) {
 
 static void test_fan_unknown_stock_zero_writes_nothing(void) {
   int rc;
-  setup(true, 120); /* implausible reading: factory value unknown */
+  setup(120); /* implausible reading: factory value unknown */
   T_EQ_INT(cfg.fan_stock_c, 0);
   T_EQ_INT(fan_set(&cfg, 85, &rc), FAN_OK); /* only the fixed range applies */
   T_EQ_INT(fan_set(&cfg, 0, &rc), FAN_OK);
@@ -139,7 +145,7 @@ static void test_fan_unknown_stock_zero_writes_nothing(void) {
 static void test_fan_json(void) {
   jw_t w;
   int rc;
-  setup(true, 91);
+  setup(91);
   fan_set(&cfg, 70, &rc);
   jw_init(&w);
   jw_obj(&w);
@@ -147,7 +153,7 @@ static void test_fan_json(void) {
   jw_end_obj(&w);
   T_EQ_STR(w.buf, "{\"fan\":{\"target_c\":70,\"current_c\":70,\"stock_c\":91}}");
   jw_free(&w);
-  setup(false, 91);
+  setup(91);
   jw_init(&w);
   jw_obj(&w);
   fan_json(&w, &cfg);
@@ -162,7 +168,6 @@ static void test_fan_device_missing(void) {
   fake_reset();
   snprintf(fake.root, sizeof(fake.root), "%s", t_tmpdir());
   config_load(&cfg);
-  cfg.fan_control = true;
   fake.fan_get_rc = -1;
   fan_init(&cfg);
   T_EQ_INT(fan_set(&cfg, 70, &rc), FAN_OK); /* write may still work */
@@ -184,7 +189,6 @@ static void test_fan_never_learns_own_written_value(void) {
   fake_reset();
   snprintf(fake.root, sizeof(fake.root), "%s", t_tmpdir());
   config_load(&cfg);
-  cfg.fan_control = true;
   fake.fan_get_rc = -1; /* first read fails: factory value unknown */
   fan_init(&cfg);
   T_EQ_INT(fan_set(&cfg, 70, &rc), FAN_OK);
@@ -199,7 +203,6 @@ static void test_fan_target_above_learned_stock_is_cleared(void) {
   fake_reset();
   snprintf(fake.root, sizeof(fake.root), "%s", t_tmpdir());
   config_load(&cfg);
-  cfg.fan_control = true;
   fake.fan_get_rc = -1;
   fan_init(&cfg);
   T_EQ_INT(fan_set(&cfg, 85, &rc), FAN_OK);
@@ -214,7 +217,7 @@ static void test_fan_target_above_learned_stock_is_cleared(void) {
 
 static void test_fan_fight_detected(void) {
   int rc, calls;
-  setup(true, 70); /* another tool had set 70 before our first start */
+  setup(70); /* another tool had set 70 before our first start */
   T_EQ_INT(cfg.fan_stock_c, 70);
   T_EQ_INT(fan_set(&cfg, 60, &rc), FAN_OK);
   for (int i = 0; i < 6; i++) {
@@ -231,13 +234,13 @@ static void test_fan_fight_detected(void) {
 }
 
 static void test_fan_stock_above_91_unknown(void) {
-  setup(true, 95);
+  setup(95);
   T_EQ_INT(cfg.fan_stock_c, 0);
 }
 
 static void test_fan_current_updates_without_target(void) {
   jw_t w;
-  setup(false, 91);
+  setup(91);
   fake.fan_value = 70; /* changed by someone else */
   tick(5);
   jw_init(&w);
@@ -248,34 +251,9 @@ static void test_fan_current_updates_without_target(void) {
   jw_free(&w);
 }
 
-static void test_release_stock_unknown_logs_and_stops_watcher(void) {
-  int rc, calls;
-  setup(true, 30); /* implausible reading: factory value stays unknown */
-  T_EQ_INT(cfg.fan_stock_c, 0);
-  T_EQ_INT(fan_set(&cfg, 70, &rc), FAN_OK);
-  calls = fake.fan_set_calls;
-  cfg.fan_control = false;
-  cfg.fan_target_c = 0;
-  fan_release(&cfg);
-  T_EQ_INT(fake.fan_set_calls, calls);
-  T_ASSERT(strstr(log_last_error(), "stays until the console resets it"));
-  fake.fan_value = 91; /* console resets later; nothing may write again */
-  tick(PS5H_FAN_CHECK_S + 1);
-  T_EQ_INT(fake.fan_set_calls, calls);
-}
-
-static void test_release_writes_known_stock(void) {
-  int rc;
-  setup(true, 91);
-  T_EQ_INT(fan_set(&cfg, 70, &rc), FAN_OK);
-  cfg.fan_control = false;
-  cfg.fan_target_c = 0;
-  fan_release(&cfg);
-  T_EQ_INT(fake.fan_value, 91);
-}
-
 int main(void) {
-  T_RUN(test_fan_disabled);
+  T_RUN(test_fan_set_allowed_without_config);
+  T_RUN(test_fan_unavailable);
   T_RUN(test_fan_learns_stock_once);
   T_RUN(test_fan_stock_not_overwritten_by_own_target);
   T_RUN(test_fan_range_and_above_stock);
@@ -291,7 +269,5 @@ int main(void) {
   T_RUN(test_fan_fight_detected);
   T_RUN(test_fan_stock_above_91_unknown);
   T_RUN(test_fan_current_updates_without_target);
-  T_RUN(test_release_stock_unknown_logs_and_stops_watcher);
-  T_RUN(test_release_writes_known_stock);
   T_MAIN();
 }

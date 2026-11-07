@@ -521,10 +521,8 @@ static void h_standby(route_ctx *ctx, route_resp *out) {
     ok(out);
     done(out);
     return;
-  case CTL_DISABLED:
-    fail(out, 403, "power_actions_disabled",
-         "allow rest mode in Home Assistant (options, Console permissions) or "
-         "set power_actions to true in config.json");
+  case CTL_UNAVAILABLE:
+    fail(out, 409, "not_available", "the console cannot do this");
     return;
   case CTL_RATE_LIMITED:
     fail_retry(out, 429, "rate_limited", "at most one request per 10 s", rc);
@@ -548,10 +546,8 @@ static void h_fan(route_ctx *ctx, const jr_t *r, route_resp *out) {
     fan_json(w, ctx->cfg);
     done(out);
     return;
-  case FAN_DISABLED:
-    fail(out, 403, "fan_control_disabled",
-         "allow fan control in Home Assistant (options, Console permissions) or "
-         "set fan_control to true in config.json");
+  case FAN_UNAVAILABLE:
+    fail(out, 409, "not_available", "the console cannot do this");
     return;
   case FAN_BAD_VALUE:
     fail(out, 400, "bad_request", "threshold_c must be 45..85 or 0");
@@ -571,10 +567,8 @@ static void h_power_off(route_ctx *ctx, route_resp *out) {
     ok(out);
     done(out);
     return;
-  case CTL_DISABLED:
-    fail(out, 403, "power_off_disabled",
-         "allow power off in Home Assistant (options, Console permissions) or "
-         "set power_off to true in config.json");
+  case CTL_UNAVAILABLE:
+    fail(out, 409, "not_available", "the console cannot do this");
     return;
   case CTL_RATE_LIMITED:
     fail_retry(out, 429, "rate_limited", "at most one power request per 10 s", rc);
@@ -607,108 +601,21 @@ static void h_notify(const jr_t *r, route_resp *out) {
   }
 }
 
-/* --- grants (v0.3) ----------------------------------------------------- */
+/* --- v0.3 grant endpoints: compatibility answers ------------------------ */
+/* v0.4 has no permissions (pairing is the only barrier). v0.3 clients still
+ * call these; the answers make them treat everything as allowed. */
 
-static void permissions_answer(route_ctx *ctx, route_resp *out) {
-  perm_json(ok(out), ctx->cfg);
+static void h_grant_start(route_resp *out) {
+  fail(out, 409, "already_allowed", "already allowed");
+}
+
+static void h_grant_finish(route_resp *out) {
+  fail(out, 409, "no_code", "no active code, nothing to confirm");
+}
+
+static void h_grant_revoke(route_resp *out) {
+  perm_json(ok(out)); /* nothing is revoked */
   done(out);
-}
-
-static void h_grant_start(route_ctx *ctx, const jr_t *r, int slot,
-                          route_resp *out) {
-  unsigned want, missing;
-  int expires_in = 0, retry = 0;
-  char text[64];
-  jw_t *w;
-  if (perm_parse(r, jr_get(r, 0, "permissions"), &want)) {
-    fail(out, 400, "bad_request",
-         "permissions: list of power_actions, power_off, fan_control");
-    return;
-  }
-  if (want & ~perm_available()) {
-    fail(out, 409, "not_available", "the console cannot do this");
-    return;
-  }
-  if (!(missing = want & ~perm_allowed(ctx->cfg))) {
-    fail(out, 409, "already_allowed", "already allowed");
-    return;
-  }
-  perm_text(missing, text, sizeof(text));
-  switch (auth_grant_start(slot, missing, text, &expires_in, &retry)) {
-  case AUTH_OK:
-    w = ok(out);
-    jw_key(w, "expires_in");
-    jw_int(w, expires_in);
-    done(out);
-    return;
-  case AUTH_RATE_LIMITED:
-    fail_retry(out, 429, "rate_limited", "wait before asking for a new code", retry);
-    return;
-  case AUTH_LOCKED:
-    fail_retry(out, 429, "locked", "too many wrong codes", retry);
-    return;
-  case AUTH_NOTIFY_FAILED:
-    fail(out, 500, "notify_failed", "could not show the code on the TV");
-    return;
-  case AUTH_RANDOM_UNAVAILABLE:
-    fail(out, 500, "random_unavailable", "no randomness source on the console");
-    return;
-  default:
-    fail(out, 500, "internal", "could not start the grant");
-  }
-}
-
-static void h_grant_finish(route_ctx *ctx, const jr_t *r, int slot,
-                           route_resp *out) {
-  char code[16];
-  unsigned perms = 0;
-  int left = 0, retry = 0;
-  jw_t *w;
-  if (!jr_string(r, jr_get(r, 0, "code"), code, sizeof(code))) {
-    fail(out, 400, "bad_request", "code is required");
-    return;
-  }
-  switch (auth_grant_finish(slot, code, &perms, &left, &retry)) {
-  case AUTH_OK:
-    if (perm_apply(ctx->cfg, perms, 0, ctx->cfg->tokens[slot].label)) {
-      fail(out, 500, "internal", "could not save config.json");
-      return;
-    }
-    permissions_answer(ctx, out);
-    return;
-  case AUTH_WRONG_CODE:
-    w = err(out, 401, "wrong_code", "the code does not match");
-    jw_key(w, "attempts_left");
-    jw_int(w, left);
-    done(out);
-    return;
-  case AUTH_NO_CODE:
-    fail(out, 409, "no_code", "no active code, start the grant first");
-    return;
-  case AUTH_CODE_EXHAUSTED:
-    fail(out, 409, "code_exhausted", "too many wrong attempts, start again");
-    return;
-  case AUTH_LOCKED:
-    fail_retry(out, 429, "locked", "too many wrong codes", retry);
-    return;
-  default:
-    fail(out, 400, "bad_request", "code: 6 digits");
-  }
-}
-
-static void h_grant_revoke(route_ctx *ctx, const jr_t *r, int slot,
-                           route_resp *out) {
-  unsigned perms;
-  if (perm_parse(r, jr_get(r, 0, "permissions"), &perms)) {
-    fail(out, 400, "bad_request",
-         "permissions: list of power_actions, power_off, fan_control");
-    return;
-  }
-  if (perm_apply(ctx->cfg, 0, perms, ctx->cfg->tokens[slot].label)) {
-    fail(out, 500, "internal", "could not save config.json");
-    return;
-  }
-  permissions_answer(ctx, out);
 }
 
 void route(route_ctx *ctx, const http_req *req, uint32_t peer,
@@ -788,9 +695,9 @@ void route(route_ctx *ctx, const http_req *req, uint32_t peer,
   case R_NOTIFY: h_notify(&body, out); break;
   case R_POWER_OFF: h_power_off(ctx, out); break;
   case R_FAN: h_fan(ctx, &body, out); break;
-  case R_GRANT_START: h_grant_start(ctx, &body, slot, out); break;
-  case R_GRANT_FINISH: h_grant_finish(ctx, &body, slot, out); break;
-  case R_GRANT_REVOKE: h_grant_revoke(ctx, &body, slot, out); break;
+  case R_GRANT_START: h_grant_start(out); break;
+  case R_GRANT_FINISH: h_grant_finish(out); break;
+  case R_GRANT_REVOKE: h_grant_revoke(out); break;
   default: fail(out, 404, "not_found", "unknown path");
   }
 }

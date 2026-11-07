@@ -384,7 +384,6 @@
             "browser_guard",
             "host_forbidden",
             "address_forbidden",
-            "power_actions_disabled",
             "not_found",
             "not_installed",
             "method_not_allowed",
@@ -404,8 +403,6 @@
             "random_unavailable",
             "system_error",
             "internal",
-            "power_off_disabled",
-            "fan_control_disabled",
             "fan_above_stock",
             "not_available",
             "already_allowed"
@@ -506,39 +503,6 @@
       "required": [
         "allowed",
         "available"
-      ],
-      "additionalProperties": false
-    },
-    "grant_start": {
-      "type": "object",
-      "properties": {
-        "result": {
-          "const": "ok"
-        },
-        "expires_in": {
-          "type": "integer",
-          "minimum": 1
-        }
-      },
-      "required": [
-        "result",
-        "expires_in"
-      ],
-      "additionalProperties": false
-    },
-    "grant_finish": {
-      "type": "object",
-      "properties": {
-        "result": {
-          "const": "ok"
-        },
-        "permissions": {
-          "$ref": "#/$defs/permissions"
-        }
-      },
-      "required": [
-        "result",
-        "permissions"
       ],
       "additionalProperties": false
     },

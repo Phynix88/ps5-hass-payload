@@ -21,14 +21,6 @@ typedef enum {
   AUTH_SAVE_FAILED
 } auth_rc;
 
-/* Permissions that a client can ask for (v0.3), named like config.json. */
-enum {
-  PERM_POWER_ACTIONS = 1u,
-  PERM_POWER_OFF = 2u,
-  PERM_FAN_CONTROL = 4u,
-  PERM_ALL = 7u
-};
-
 /* Keeps a pointer to the loaded config; resets all pairing state. */
 void auth_init(config *c);
 /* retry_after: seconds, set for AUTH_RATE_LIMITED and AUTH_LOCKED. */
@@ -40,15 +32,5 @@ auth_rc auth_pair_finish(const char *code, const char *client_id,
 int auth_check(const char *bearer_header);
 auth_rc auth_revoke(int slot);
 bool auth_paired(void);
-
-/* Grant code (own slot and lock, separate from pairing): shows
- * `ps5-hass: "<label>" asks to allow <perms_text>. Code: 123456` for the
- * client of token slot `slot`. */
-auth_rc auth_grant_start(int slot, unsigned perms, const char *perms_text,
-                         int *expires_in, int *retry_after);
-/* AUTH_OK: *perms_out = the set from start; the code is used up. A code of
- * another client: AUTH_NO_CODE. */
-auth_rc auth_grant_finish(int slot, const char *code, unsigned *perms_out,
-                          int *attempts_left, int *retry_after);
 
 #endif

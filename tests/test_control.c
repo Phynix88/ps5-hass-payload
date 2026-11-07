@@ -115,17 +115,24 @@ static void test_close_ok(void) {
   T_EQ_INT(control_close(NULL, &rc), CTL_OK);
 }
 
-static void test_standby_disabled(void) {
+static void test_standby_allowed_without_config(void) {
+  int rc;
+  setup(); /* fresh config: no permission switch anywhere */
+  T_EQ_INT(control_standby(&cfg, &rc), CTL_OK);
+  T_EQ_INT(fake.standby_calls, 1);
+}
+
+static void test_standby_unavailable(void) {
   int rc;
   setup();
-  T_EQ_INT(control_standby(&cfg, &rc), CTL_DISABLED);
+  fake.caps.standby = false;
+  T_EQ_INT(control_standby(&cfg, &rc), CTL_UNAVAILABLE);
   T_EQ_INT(fake.standby_calls, 0);
 }
 
 static void test_standby_rate_limited(void) {
   int rc;
   setup();
-  cfg.power_actions = true;
   T_EQ_INT(control_standby(&cfg, &rc), CTL_OK);
   T_EQ_INT(fake.standby_calls, 1);
   fake.mono_ms += 9000;
@@ -139,7 +146,6 @@ static void test_standby_rate_limited(void) {
 static void test_standby_failure_is_system_error(void) {
   int rc;
   setup();
-  cfg.power_actions = true;
   fake.standby_rc = -3;
   T_EQ_INT(control_standby(&cfg, &rc), CTL_SYSTEM_ERROR);
   T_EQ_INT(rc, -3);
@@ -194,19 +200,24 @@ static void test_notify_failure_500(void) {
   (void)rc;
 }
 
-static void test_power_off_disabled_by_default(void) {
+static void test_power_off_allowed_without_config(void) {
   int rc;
   setup();
-  cfg.power_actions = true; /* rest mode allowed does not allow power off */
-  T_EQ_INT(control_power_off(&cfg, &rc), CTL_DISABLED);
+  T_EQ_INT(control_power_off(&cfg, &rc), CTL_OK);
+  T_EQ_INT(fake.power_off_calls, 1);
+}
+
+static void test_power_off_unavailable(void) {
+  int rc;
+  setup();
+  fake.caps.power_off = false;
+  T_EQ_INT(control_power_off(&cfg, &rc), CTL_UNAVAILABLE);
   T_EQ_INT(fake.power_off_calls, 0);
 }
 
 static void test_power_off_shares_rate_limit(void) {
   int rc;
   setup();
-  cfg.power_actions = true;
-  cfg.power_off = true;
   T_EQ_INT(control_standby(&cfg, &rc), CTL_OK);
   fake.mono_ms += 3000;
   T_EQ_INT(control_power_off(&cfg, &rc), CTL_RATE_LIMITED);
@@ -232,7 +243,8 @@ int main(void) {
   T_RUN(test_close_no_app);
   T_RUN(test_close_title_mismatch);
   T_RUN(test_close_ok);
-  T_RUN(test_standby_disabled);
+  T_RUN(test_standby_allowed_without_config);
+  T_RUN(test_standby_unavailable);
   T_RUN(test_standby_rate_limited);
   T_RUN(test_standby_failure_is_system_error);
   T_RUN(test_notify_sends_sanitized);
@@ -240,7 +252,8 @@ int main(void) {
   T_RUN(test_notify_empty_rejected);
   T_RUN(test_notify_rate_limited);
   T_RUN(test_notify_failure_500);
-  T_RUN(test_power_off_disabled_by_default);
+  T_RUN(test_power_off_allowed_without_config);
+  T_RUN(test_power_off_unavailable);
   T_RUN(test_power_off_shares_rate_limit);
   apps_free(&apps);
   T_MAIN();

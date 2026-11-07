@@ -78,9 +78,10 @@ ctl_rc control_close(const char *expected, int *rc_out) {
 ctl_rc control_standby(const config *c, int *rc_out) {
   int64_t now = plat_mono_ms();
   int rc;
+  (void)c; /* nothing in config.json limits rest mode any more */
   *rc_out = 0;
-  if (!c->power_actions) {
-    return CTL_DISABLED;
+  if (!plat_capabilities().standby) {
+    return CTL_UNAVAILABLE;
   }
   if (standby_done && now - standby_last_ms < PS5H_STANDBY_INTERVAL_S * 1000) {
     *rc_out = (int)((standby_last_ms + PS5H_STANDBY_INTERVAL_S * 1000 - now +
@@ -134,9 +135,10 @@ ctl_rc control_notify(const char *utf8, int *retry_after) {
 ctl_rc control_power_off(const config *c, int *rc_out) {
   int64_t now = plat_mono_ms();
   int rc;
+  (void)c;
   *rc_out = 0;
-  if (!c->power_off) {
-    return CTL_DISABLED;
+  if (!plat_capabilities().power_off) {
+    return CTL_UNAVAILABLE;
   }
   if (standby_done && now - standby_last_ms < PS5H_STANDBY_INTERVAL_S * 1000) {
     *rc_out = (int)((standby_last_ms + PS5H_STANDBY_INTERVAL_S * 1000 - now + 999) / 1000);

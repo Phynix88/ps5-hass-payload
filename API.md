@@ -56,7 +56,7 @@ There are no CORS headers.
 
 | Method and path | Token | Answer |
 |---|---|---|
-| `GET /info` | no | `name`, `version`, `commit`, `api` (1), `device_id`, `model`, `firmware`, `paired`, `power_actions`, `config` (`ok`/`recovered`), `capabilities{temps,fan,notify,random,launch,standby,mdns,power_off,fan_control}`, `permissions{power_actions,power_off,fan_control}` (each `{allowed,available}`, since v0.3), `last_error` |
+| `GET /info` | no | `name`, `version`, `commit`, `api` (1), `device_id`, `model`, `firmware`, `paired`, `power_actions` (`true` when the console can enter rest mode), `config` (`ok`/`recovered`), `capabilities{temps,fan,notify,random,launch,standby,mdns,power_off,fan_control}`, `permissions{power_actions,power_off,fan_control}` (each `{allowed,available}`; kept for v0.3 clients, `allowed` always equals `available`), `last_error` |
 | `POST /pair/start` | no | `{"expires_in":120}` |
 | `POST /pair/finish` | no | `{"token":"<64 hex>"}` |
 | `POST /pair/revoke` | yes | `{}` |
@@ -65,13 +65,13 @@ There are no CORS headers.
 | `GET /apps/<ID>/icon` | yes | PNG or JPEG (`Content-Type` from the file signature), `ETag`; with `If-None-Match` → `304` |
 | `POST /apps/<ID>/launch` | yes | body `{"replace_running":false}` (optional) → `{"already_running":false,"app_id":24}` |
 | `POST /apps/running/close` | yes | body `{"title_id":"PPSA…"}` (optional) |
-| `POST /power/standby` | yes | rest mode; only when `power_actions` is `true` in `config.json`; at most once per 10 s |
-| `POST /power/off` | yes | power off (not rest mode); only when `power_off` is `true` in `config.json` (since v0.2); shares the 10 s limit with standby |
+| `POST /power/standby` | yes | rest mode; at most once per 10 s |
+| `POST /power/off` | yes | power off (not rest mode; since v0.2); shares the 10 s limit with standby |
 | `POST /notify` | yes | body `{"message":"Dinner is ready"}`: shown as a notification on the TV (UTF-8, cut to 200 bytes, control characters removed); at most 5 per 30 s (since v0.2) |
-| `POST /fan` | yes | body `{"threshold_c":70}` (45..85) or `{"threshold_c":0}` (back to the console's own value); only when `fan_control` is `true` in `config.json`; answer `{"fan":{…}}` (since v0.2) |
-| `POST /grant/start` | yes | body `{"permissions":["power_off","fan_control"]}` → the TV shows a code, answer `{"expires_in":120}` (since v0.3, see [Permissions](#permissions-since-v03)) |
-| `POST /grant/finish` | yes | body `{"code":"123456"}` → the permissions are granted and saved, answer `{"permissions":{…}}` |
-| `POST /grant/revoke` | yes | body `{"permissions":["power_off"]}` → taken away at once, no code, answer `{"permissions":{…}}` |
+| `POST /fan` | yes | body `{"threshold_c":70}` (45..85) or `{"threshold_c":0}` (back to the console's own value); answer `{"fan":{…}}` (since v0.2) |
+| `POST /grant/start` | yes | compatibility only: always `409 already_allowed` (see [Permissions](#permissions-removed-in-v04)) |
+| `POST /grant/finish` | yes | compatibility only: always `409 no_code` |
+| `POST /grant/revoke` | yes | compatibility only: `200` with `{"permissions":{…}}`, nothing is revoked |
 
 Success answers carry `"result":"ok"`. `<ID>` must match `^[A-Z]{4}[0-9]{5}$`.
 
@@ -102,7 +102,7 @@ The PS5's fan driver speeds up above a temperature threshold. `POST /fan` change
 [ps5upload](https://github.com/phantomptr/ps5upload) and ps5-fan-control do (`/dev/icc_fan`). There is no fan curve
 and no direct speed control.
 
-- Off unless `"fan_control": true` is set in `config.json` on the console (`403 fan_control_disabled`).
+- Needs a console whose fan driver can be read (`capabilities.fan_control`), else `409 not_available`.
 - Allowed: 45 to 85 °C, and **never above the console's own value** (`409 fan_above_stock`): the console must never
   run hotter than Sony intends. The factory value is learned once (the first reading that is not our own target)
   and kept in `config.json`.
@@ -114,33 +114,15 @@ and no direct speed control.
   restart the payload.
 - `{"threshold_c": 0}` writes the factory value back and stops overriding.
 
-### Permissions (since v0.3)
+### Permissions (removed in v0.4)
 
-Rest mode, power off and the fan threshold are off until they are allowed. Either set `power_actions`, `power_off`
-or `fan_control` to `true` in `config.json` and restart the payload (as before), or grant them from a paired client
-with a code shown on the TV:
-
-1. `POST /grant/start` with the names. The TV shows `ps5-hass: "<label>" asks to allow power off, fan threshold.
-   Code: 123456` (`<label>` is the label of the asking client's pairing, at most 40 bytes).
-2. `POST /grant/finish` with the code. The permissions apply at once and are saved in `config.json`.
-
-Rules:
-- Names: `power_actions` (rest mode), `power_off`, `fan_control`. An empty list, an unknown or a repeated name is
-  `400 bad_request`.
-- A name the console cannot do (`permissions.<name>.available` is `false`) is `409 not_available`. Names that are
-  already allowed are left out of the code; if nothing is left, `409 already_allowed`.
-- Grant codes have their own slot and their own failure budget, separate from pairing: a pairing code is never
-  accepted as a grant code and the other way round. A grant code belongs to the client that asked for it; another
-  client gets `409 no_code`.
-- Otherwise like pairing: valid 120 s, a new code at most every 30 s (`429 rate_limited`), 5 wrong attempts use a
-  code up (`409 code_exhausted`), 10 wrong grant codes in a row lock granting for 15 minutes, doubling up to 24 hours
-  (`429 locked`). The lock is kept in memory only.
-- `POST /grant/revoke` needs no code. Names that are not allowed or not available are no error.
-- Taking `fan_control` away first saves `config.json`, then writes the console's factory threshold back. If that
-  write fails or the factory value is unknown, the permission is gone anyway and `last_error` says the threshold
-  stays until the console resets it.
-- If `config.json` cannot be saved, the permissions stay as they were and the answer is `500 internal`; a grant code
-  is used up anyway, ask for a new one.
+There are no permissions. Pairing, with the code shown on the TV, is the only barrier: a paired client may enter rest
+mode, power off and set the fan threshold, as far as the console can do it (`capabilities.standby`, `power_off`,
+`fan_control`; a function the console lacks answers `409 not_available`). The `config.json` keys `power_actions`,
+`power_off` and `fan_control` are ignored and left out the next time the file is saved. For v0.3 clients the payload
+still answers: `/info.permissions` has `allowed` equal to `available`, `POST /grant/start` is `409 already_allowed`
+(nothing to ask for), `POST /grant/finish` is `409 no_code`, and `POST /grant/revoke` is `200` without effect. These
+fields and endpoints go away in a later version.
 
 ### `/apps`
 
@@ -174,7 +156,7 @@ Rules:
 |---|---|---|
 | 400 | `bad_request`, `bad_title_id` | |
 | 401 | `unauthorized` (token missing or wrong), `wrong_code` | `attempts_left` for `wrong_code` |
-| 403 | `origin_forbidden`, `browser_guard`, `host_forbidden`, `address_forbidden`, `power_actions_disabled`, `power_off_disabled`, `fan_control_disabled` | |
+| 403 | `origin_forbidden`, `browser_guard`, `host_forbidden`, `address_forbidden` | |
 | 404 | `not_found`, `not_installed` | |
 | 405 | `method_not_allowed` | |
 | 409 | `no_code`, `code_exhausted`, `token_limit`, `other_app_running`, `no_user`, `title_mismatch`, `no_app`, `fan_above_stock`, `not_available`, `already_allowed` | |

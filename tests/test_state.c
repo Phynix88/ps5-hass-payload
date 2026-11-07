@@ -116,8 +116,8 @@ static void test_info_fields_and_capabilities(void) {
                      "\"paired\":false,\"power_actions\":false,\"config\":\"ok\","));
   T_ASSERT(strstr(s, "\"capabilities\":{\"temps\":true,\"fan\":true,"
                      "\"notify\":true,\"random\":false,\"launch\":true,"
-                     "\"standby\":false,\"mdns\":true,\"power_off\":false,"
-                     "\"fan_control\":false}"));
+                     "\"standby\":false,\"mdns\":true,\"power_off\":true,"
+                     "\"fan_control\":true}"));
   T_ASSERT(strstr(s, "\"last_error\":"));
 }
 
@@ -126,7 +126,6 @@ static void test_info_recovered_and_last_error(void) {
   const char *s;
   setup();
   cfg.recovered = true;
-  cfg.power_actions = true;
   log_error("something broke");
   T_ASSERT((s = render_info(&r)));
   T_ASSERT(strstr(s, "\"power_actions\":true,\"config\":\"recovered\""));
@@ -145,28 +144,28 @@ static void test_state_payloads(void) {
   T_ASSERT(strstr(s, "\"payloads\":[\"ftpsrv.elf\",\"kstuff.elf\"]"));
 }
 
-static void test_info_power_off_needs_permission(void) {
+static void test_info_power_and_fan_follow_capabilities(void) {
   jr_t r;
   const char *s;
   setup();
-  T_ASSERT((s = render_info(&r)));
-  T_ASSERT(strstr(s, "\"power_off\":false"));
-  cfg.power_off = true;
-  T_ASSERT((s = render_info(&r)));
-  T_ASSERT(strstr(s, "\"power_off\":true"));
+  T_ASSERT((s = render_info(&r))); /* fresh config: nothing to allow */
+  T_ASSERT(strstr(s, "\"power_actions\":true,"));
+  T_ASSERT(strstr(s, "\"power_off\":true,\"fan_control\":true}"));
   fake.caps.power_off = false;
+  fake.caps.fan_control = false;
+  fake.caps.standby = false;
   T_ASSERT((s = render_info(&r)));
-  T_ASSERT(strstr(s, "\"power_off\":false"));
+  T_ASSERT(strstr(s, "\"power_actions\":false,"));
+  T_ASSERT(strstr(s, "\"power_off\":false,\"fan_control\":false}"));
 }
 
 static void test_info_has_permissions(void) {
   jr_t r;
   const char *s;
   setup();
-  cfg.fan_control = true;
   fake.caps.power_off = false;
   T_ASSERT((s = render_info(&r)));
-  T_ASSERT(strstr(s, "\"permissions\":{\"power_actions\":{\"allowed\":false,"
+  T_ASSERT(strstr(s, "\"permissions\":{\"power_actions\":{\"allowed\":true,"
                      "\"available\":true},\"power_off\":{\"allowed\":false,"
                      "\"available\":false},\"fan_control\":{\"allowed\":true,"
                      "\"available\":true}}"));
@@ -178,7 +177,7 @@ int main(void) {
   T_RUN(test_state_all_sensors_fail);
   T_RUN(test_info_fields_and_capabilities);
   T_RUN(test_state_payloads);
-  T_RUN(test_info_power_off_needs_permission);
+  T_RUN(test_info_power_and_fan_follow_capabilities);
   T_RUN(test_info_recovered_and_last_error);
   apps_free(&apps);
   T_RUN(test_info_has_permissions);

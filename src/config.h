@@ -27,9 +27,6 @@ typedef struct {
   bool allow_broken; /* an invalid entry: block every address */
   char hosts[PS5H_MAX_HOSTS][256];
   int n_hosts;
-  bool power_actions;
-  bool power_off;    /* v0.2: allow powering off (own permission) */
-  bool fan_control;  /* v0.2: allow setting the fan threshold */
   int fan_target_c;  /* 0 = console's own value */
   int fan_stock_c;   /* learned factory value, 0 = unknown */
   int fan_written_c; /* last value we wrote ourselves, never learned as factory */

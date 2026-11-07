@@ -9,19 +9,13 @@
 #include "config.h"
 #include "json.h"
 
-typedef enum { FAN_OK, FAN_DISABLED, FAN_BAD_VALUE, FAN_ABOVE_STOCK, FAN_SYSTEM_ERROR } fan_rc;
+typedef enum { FAN_OK, FAN_UNAVAILABLE, FAN_BAD_VALUE, FAN_ABOVE_STOCK, FAN_SYSTEM_ERROR } fan_rc;
 
 /* Reads the current value; learns the factory value once (never our own). */
 void fan_init(config *c);
 /* 45..85 (never above the factory value) or 0 = back to the factory value.
  * rc_out: console code on FAN_SYSTEM_ERROR. Saves the target in config.json. */
 fan_rc fan_set(config *c, int target_c, int *rc_out);
-/* fan_control was taken away (config already saved with target 0) while we
- * had a threshold set: write the factory value back if known, unless the
- * watcher had given up because another tool controls the fan; else, or if writing fails, log that the
- * threshold stays until the console resets it. The watcher does nothing
- * afterwards because fan_control is false. */
-void fan_release(config *c);
 /* Watcher, called from the main loop: every PS5H_FAN_CHECK_S rewrite our
  * target after the console reset it to its own value; stop when another tool
  * sets a third value or after PS5H_FAN_MAX_FAILS failed writes. */

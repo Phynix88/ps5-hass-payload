@@ -229,12 +229,6 @@ def test_close_mismatch_and_ok(paired):
     validate("ok", doc)
 
 
-def test_standby_disabled_by_default(paired):
-    status, doc, _ = paired.post("/api/v1/power/standby")
-    assert status == 403 and doc["error"] == "power_actions_disabled"
-    validate("error", doc)
-
-
 def test_revoke(paired):
     status, doc, _ = paired.post("/api/v1/pair/revoke")
     assert status == 200
@@ -305,39 +299,39 @@ def test_state_has_payloads_and_fan(paired):
     status, doc, _ = paired.get("/api/v1/state")
     validate("state", doc)
     assert doc["payloads"] == []
-    # reading the threshold needs no permission; setting it does
     assert doc["fan"] == {"target_c": None, "current_c": 91, "stock_c": 91}
 
 
-def test_power_off_and_fan_disabled_by_default(paired):
-    status, doc, _ = paired.post("/api/v1/power/off")
-    assert status == 403 and doc["error"] == "power_off_disabled"
-    validate("error", doc)
-    status, doc, _ = paired.post("/api/v1/fan", {"threshold_c": 70})
-    assert status == 403 and doc["error"] == "fan_control_disabled"
+def test_power_and_fan_allowed_after_pairing(paired):
     info = paired.get("/api/v1/info")[1]
-    assert info["capabilities"]["power_off"] is False
-    assert info["capabilities"]["fan_control"] is False
+    validate("info", info)
+    caps = info["capabilities"]
+    assert caps["standby"] and caps["power_off"] and caps["fan_control"]
+    assert info["power_actions"] is True
+    status, doc, _ = paired.post("/api/v1/fan", {"threshold_c": 70})
+    assert status == 200
+    validate("fan", doc)
+    assert doc["fan"] == {"target_c": 70, "current_c": 70, "stock_c": 91}
+    status, doc, _ = paired.post("/api/v1/fan", {"threshold_c": 95})
+    assert status == 400
+    status, doc, _ = paired.post("/api/v1/fan", {"threshold_c": 0})
+    assert status == 200 and doc["fan"]["current_c"] == 91
+    state = paired.get("/api/v1/state")[1]
+    validate("state", state)
+    assert state["fan"]["stock_c"] == 91
+    status, doc, _ = paired.post("/api/v1/power/standby")
+    assert status == 200
+    validate("ok", doc)
+    status, doc, _ = paired.post("/api/v1/power/off")
+    assert status == 429 and doc["error"] == "rate_limited"  # shares the 10 s limit
+    validate("error", doc)
 
 
-def test_power_off_and_fan_enabled(tmp_path):
-    c = Console(tmp_path, config_extra={"power_off": True, "fan_control": True})
+def test_old_permission_keys_in_config_are_ignored(tmp_path):
+    c = Console(tmp_path, config_extra={"power_actions": False, "power_off": False,
+                                        "fan_control": False})
     try:
         c.pair()
-        info = c.get("/api/v1/info")[1]
-        validate("info", info)
-        assert info["capabilities"]["power_off"] and info["capabilities"]["fan_control"]
-        status, doc, _ = c.post("/api/v1/fan", {"threshold_c": 70})
-        assert status == 200
-        validate("fan", doc)
-        assert doc["fan"] == {"target_c": 70, "current_c": 70, "stock_c": 91}
-        status, doc, _ = c.post("/api/v1/fan", {"threshold_c": 95})
-        assert status == 400
-        status, doc, _ = c.post("/api/v1/fan", {"threshold_c": 0})
-        assert status == 200 and doc["fan"]["current_c"] == 91
-        state = c.get("/api/v1/state")[1]
-        validate("state", state)
-        assert state["fan"]["stock_c"] == 91
         status, doc, _ = c.post("/api/v1/power/off")
         assert status == 200
         validate("ok", doc)
@@ -345,52 +339,26 @@ def test_power_off_and_fan_enabled(tmp_path):
         c.stop()
 
 
-def grant_start(console, names):
-    return console.post("/api/v1/grant/start", {"permissions": names})
-
-
-def test_grant_start_finish_revoke(paired):
-    status, info, _ = paired.get("/api/v1/info")
+def test_grant_endpoints_compat(paired):
+    info = paired.get("/api/v1/info")[1]
     validate("info", info)
-    assert info["permissions"]["power_off"] == {"allowed": False, "available": True}
-    status, doc, _ = grant_start(paired, ["power_off"])
-    assert status == 200, doc
-    validate("grant_start", doc)
-    status, doc, _ = paired.post("/api/v1/grant/finish", {"code": paired.shown_code()})
-    assert status == 200, doc
-    validate("grant_finish", doc)
-    assert doc["permissions"]["power_off"]["allowed"] is True
-    status, info, _ = paired.get("/api/v1/info")
-    assert info["permissions"]["power_off"]["allowed"] is True
-    assert info["capabilities"]["power_off"] is True
+    for name in ("power_actions", "power_off", "fan_control"):
+        assert info["permissions"][name] == {"allowed": True, "available": True}
+    shown = paired.shown_code()
+    status, doc, _ = paired.post("/api/v1/grant/start",
+                                 {"permissions": ["power_off", "fan_control"]})
+    assert status == 409 and doc["error"] == "already_allowed"
+    validate("error", doc)
+    assert paired.shown_code() == shown  # no new code on the TV
+    status, doc, _ = paired.post("/api/v1/grant/finish", {"code": "123456"})
+    assert status == 409 and doc["error"] == "no_code"
+    validate("error", doc)
     status, doc, _ = paired.post("/api/v1/grant/revoke", {"permissions": ["power_off"]})
-    assert status == 200, doc
+    assert status == 200
     validate("grant_revoke", doc)
-    assert doc["permissions"]["power_off"]["allowed"] is False
+    assert doc["permissions"]["power_off"] == {"allowed": True, "available": True}
     status, doc, _ = paired.post("/api/v1/power/off")
-    assert status == 403 and doc["error"] == "power_off_disabled"
-
-
-def test_grant_errors(tmp_path):
-    c = Console(tmp_path, config_extra={"power_actions": True})
-    try:
-        c.pair()
-        status, doc, _ = grant_start(c, [])
-        assert status == 400
-        validate("error", doc)
-        status, doc, _ = grant_start(c, ["power_actions"])
-        assert status == 409 and doc["error"] == "already_allowed"
-        validate("error", doc)
-        status, doc, _ = grant_start(c, ["fan_control"])
-        assert status == 200
-        code = c.shown_code()
-        wrong = ("1" if code[0] != "1" else "2") + code[1:]
-        status, doc, _ = c.post("/api/v1/grant/finish", {"code": wrong})
-        assert status == 401 and doc["error"] == "wrong_code" and doc["attempts_left"] == 4
-        validate("error", doc)
-        c.token = None
-        status, doc, _ = grant_start(c, ["power_off"])
-        assert status == 401
-    finally:
-        c.stop()
-
+    assert status == 200
+    paired.token = None
+    status, doc, _ = paired.post("/api/v1/grant/start", {"permissions": ["power_off"]})
+    assert status == 401

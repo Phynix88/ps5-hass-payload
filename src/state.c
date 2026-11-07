@@ -110,8 +110,8 @@ void info_json(jw_t *w, const config *c, const char *device_id,
   jw_cstr(w, fw);
   jw_key(w, "paired");
   jw_bool(w, auth_paired());
-  jw_key(w, "power_actions");
-  jw_bool(w, c->power_actions);
+  jw_key(w, "power_actions"); /* v0.3 name: the console can enter rest mode */
+  jw_bool(w, caps.standby);
   jw_key(w, "config");
   jw_cstr(w, c->recovered ? "recovered" : "ok");
   jw_key(w, "capabilities");
@@ -131,11 +131,11 @@ void info_json(jw_t *w, const config *c, const char *device_id,
   jw_key(w, "mdns");
   jw_bool(w, mdns_running);
   jw_key(w, "power_off");
-  jw_bool(w, caps.power_off && c->power_off);
+  jw_bool(w, caps.power_off);
   jw_key(w, "fan_control");
-  jw_bool(w, caps.fan_control && c->fan_control);
+  jw_bool(w, caps.fan_control);
   jw_end_obj(w);
-  perm_json(w, c);
+  perm_json(w);
   jw_key(w, "last_error");
   if (err) {
     jw_cstr(w, err);

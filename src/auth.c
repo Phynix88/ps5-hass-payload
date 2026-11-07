@@ -12,10 +12,9 @@
 
 static config *cfg;
 
-/* One code slot with its own failure budget and lock. Pairing and grants
- * each have one, so a device without a token cannot block granting. */
+/* A code slot with its own failure budget and lock. */
 typedef struct {
-  const char *what; /* "pairing" / "grant", for the log */
+  const char *what; /* "pairing", for the log */
   bool active;      /* a code is held */
   bool exhausted;   /* 5 wrong attempts on this code */
   char code[7];
@@ -28,18 +27,12 @@ typedef struct {
   int64_t lock_until_ms;
 } code_state;
 
-static code_state pair_st, grant_st;
-static char grant_client[37]; /* the grant code belongs to this client */
-static unsigned grant_perms;
+static code_state pair_st;
 
 void auth_init(config *c) {
   cfg = c;
   memset(&pair_st, 0, sizeof(pair_st));
-  memset(&grant_st, 0, sizeof(grant_st));
   pair_st.what = "pairing";
-  grant_st.what = "grant";
-  grant_client[0] = '\0';
-  grant_perms = 0;
 }
 
 bool auth_paired(void) { return cfg && cfg->n_tokens > 0; }
@@ -305,75 +298,5 @@ auth_rc auth_revoke(int slot) {
     return AUTH_SAVE_FAILED;
   }
   log_msg("pairing: token revoked");
-  return AUTH_OK;
-}
-
-/* --- grants (v0.3) ------------------------------------------------------ */
-
-/* Copies at most `max` bytes of `in`, never cutting a UTF-8 character;
- * control characters become spaces (the label is shown on the TV). */
-static void utf8_prefix(const char *in, size_t max, char *out) {
-  size_t n = strlen(in);
-  if (n > max) {
-    n = max;
-    while (n > 0 && ((unsigned char)in[n] & 0xc0) == 0x80) {
-      n--;
-    }
-  }
-  for (size_t i = 0; i < n; i++) {
-    unsigned char ch = (unsigned char)in[i];
-    out[i] = ch < 0x20 || ch == 0x7f ? ' ' : (char)ch;
-  }
-  out[n] = '\0';
-}
-
-static bool valid_slot(int slot) {
-  return cfg && slot >= 0 && slot < cfg->n_tokens;
-}
-
-auth_rc auth_grant_start(int slot, unsigned perms, const char *perms_text,
-                         int *expires_in, int *retry_after) {
-  char label[PS5H_GRANT_LABEL_MAX_BYTES + 1], prefix[200];
-  auth_rc rc;
-  *retry_after = 0;
-  if (!valid_slot(slot) || !perms || (perms & ~(unsigned)PERM_ALL) ||
-      !perms_text) {
-    return AUTH_BAD_INPUT;
-  }
-  utf8_prefix(cfg->tokens[slot].label, PS5H_GRANT_LABEL_MAX_BYTES, label);
-  snprintf(prefix, sizeof(prefix), "ps5-hass: \"%s\" asks to allow %s. Code: ",
-           label, perms_text);
-  rc = code_start(&grant_st, prefix, expires_in, retry_after);
-  if (rc == AUTH_OK) {
-    memcpy(grant_client, cfg->tokens[slot].client_id, sizeof(grant_client));
-    grant_perms = perms;
-    log_msg("grant: code shown for \"%s\"", label);
-  }
-  return rc;
-}
-
-auth_rc auth_grant_finish(int slot, const char *code, unsigned *perms_out,
-                          int *attempts_left, int *retry_after) {
-  auth_rc rc;
-  *perms_out = 0;
-  *attempts_left = 0;
-  *retry_after = 0;
-  if (!valid_slot(slot) || !valid_code(code)) {
-    return AUTH_BAD_INPUT;
-  }
-  if (locked(&grant_st, plat_mono_ms(), retry_after)) {
-    return AUTH_LOCKED;
-  }
-  /* A code belongs to the client that asked for it; others do not even
-   * learn whether one is open, and do not use up its attempts. */
-  if (!grant_st.active || strcmp(grant_client, cfg->tokens[slot].client_id)) {
-    return AUTH_NO_CODE;
-  }
-  if ((rc = code_check(&grant_st, code, attempts_left, retry_after)) != AUTH_OK) {
-    return rc;
-  }
-  *perms_out = grant_perms;
-  grant_perms = 0;
-  grant_client[0] = '\0';
   return AUTH_OK;
 }

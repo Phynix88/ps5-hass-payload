@@ -249,7 +249,6 @@ int config_load(config *c) {
   char *buf;
   jr_t r;
   int64_t v;
-  bool b;
 
   defaults(c);
   if (path_in_data("config.json", path, sizeof(path))) {
@@ -284,9 +283,6 @@ int config_load(config *c) {
     log_error("config: invalid allow list, blocking every address");
   }
   load_hosts(c, &r, jr_get(&r, 0, "hosts"));
-  c->power_actions = jr_bool(&r, jr_get(&r, 0, "power_actions"), &b) && b;
-  c->power_off = jr_bool(&r, jr_get(&r, 0, "power_off"), &b) && b;
-  c->fan_control = jr_bool(&r, jr_get(&r, 0, "fan_control"), &b) && b;
   if (jr_int(&r, jr_get(&r, 0, "fan_target_c"), &v) && v >= PS5H_FAN_MIN_C &&
       v <= PS5H_FAN_MAX_C) {
     c->fan_target_c = (int)v;
@@ -343,12 +339,6 @@ int config_save(const config *c) {
     jw_cstr(&w, c->hosts[i]);
   }
   jw_end_arr(&w);
-  jw_key(&w, "power_actions");
-  jw_bool(&w, c->power_actions);
-  jw_key(&w, "power_off");
-  jw_bool(&w, c->power_off);
-  jw_key(&w, "fan_control");
-  jw_bool(&w, c->fan_control);
   jw_key(&w, "fan_target_c");
   jw_int(&w, c->fan_target_c);
   jw_key(&w, "fan_stock_c");
