@@ -29,8 +29,19 @@ void fake_reset(void) {
   fake.ipv4[0] = 0x0100007f + 0x01000000; /* any non-loopback value */
   fake.fan_value = 91;
   fake.n_ipv4 = 1;
-  fake.caps = (plat_caps){true, true, true, true, true, true, true, true,
-                          true, true, true, true, true};
+  fake.caps = (plat_caps){.notify = true,
+                          .random = true,
+                          .standby = true,
+                          .fan = true,
+                          .temps = true,
+                          .language = true,
+                          .power_off = true,
+                          .fan_control = true,
+                          .focus = true,
+                          .power_state = true,
+                          .suspend = true,
+                          .keep_awake = true,
+                          .soc_power = true};
   fake.power_state = 1000;
 }
 

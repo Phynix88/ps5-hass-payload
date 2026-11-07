@@ -86,7 +86,7 @@ static int (*opt_param_int)(int, int *);
 static int (*opt_fan)(void *, void *);
 static int (*opt_turnoff)(void);
 static bool temps_ok, fan_device_ok;
-/* v0.4. Signatures and libraries as measured with probe3 on FW 13.60. */
+/* v0.4. Signatures and libraries as measured on FW 13.60. */
 static int (*opt_state)(void);
 static int (*opt_focus)(void *, void *);
 static int (*opt_lnc_init)(void);
@@ -476,29 +476,22 @@ int plat_power_state(void) {
 }
 
 int plat_focused_app(int *app_id) {
-  uint8_t *b1, *b2;
+  /* polled, so no heap allocation per call */
+  _Alignas(16) uint8_t b1[SONY_BUF];
+  _Alignas(16) uint8_t b2[SONY_BUF];
   int rc;
   pthread_once(&resolve_once, resolve);
   if (!opt_focus) {
     return -1;
   }
-  b1 = aligned_alloc(16, SONY_BUF);
-  b2 = aligned_alloc(16, SONY_BUF);
-  if (!b1 || !b2) {
-    free(b1);
-    free(b2);
-    return -1;
-  }
-  memset(b1, 0, SONY_BUF);
-  memset(b2, 0, SONY_BUF);
+  memset(b1, 0, sizeof(b1));
+  memset(b2, 0, sizeof(b2));
   rc = opt_focus(b1, b2);
   if (rc == 0) {
     int32_t id;
     memcpy(&id, b1, sizeof(id)); /* the first 4 bytes are the app id */
     *app_id = id;
   }
-  free(b1);
-  free(b2);
   return rc;
 }
 
@@ -510,9 +503,9 @@ int plat_suspend_app(int app_id) {
   if (!opt_lnc_init || !opt_suspend) {
     return -1;
   }
-  /* Only here, on the first minimise: probe3 showed nothing wrong with it, but
-   * the console crashed once in rest mode with it initialised, so no other
-   * path may start it (spec 9a). */
+  /* Only the first minimise initialises the launch utility; the console once
+   * crashed entering rest mode while it was initialised, so nothing else may
+   * start it. */
   pthread_mutex_lock(&lnc_lock);
   if (!lnc_ready) {
     rc = opt_lnc_init();
