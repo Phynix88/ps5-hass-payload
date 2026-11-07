@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include <sqlite3.h>
+#include <unistd.h>
 
 #include "apps.h"
 #include "config.h"
@@ -18,6 +19,7 @@
 
 #define SRC_PATH "/system_data/priv/mms/app.db"
 #define COPY_NAME "app.db.copy"
+#define NEW_NAME "app.db.copy.new" /* the attempt; becomes COPY_NAME on success */
 #define TABLE_PREFIX "tbl_iconinfo_"
 #define MAX_TABLES 64
 #define MAX_NAME 128 /* a table name is "tbl_iconinfo_" + a hex user id */
@@ -32,7 +34,9 @@ static struct {
   entry *list; /* sorted by id; only titles with a known value */
   int n;
   bool have_run;
-  int64_t last_ms;
+  int64_t last_ms; /* of the last attempt */
+  int64_t next_ms; /* earliest next attempt */
+  bool fail_logged; /* one log line per streak of failures */
 } st;
 
 static void clear_list(void) {
@@ -45,6 +49,8 @@ void sonytime_reset(void) {
   clear_list();
   st.have_run = false;
   st.last_ms = 0;
+  st.next_ms = 0;
+  st.fail_logged = false;
 }
 
 static int cmp_entry(const void *a, const void *b) {
@@ -63,22 +69,27 @@ int64_t sonytime_of(const char *title_id) {
 
 /* --- the copy ----------------------------------------------------------- */
 
-static int copy_file(char *copy, size_t cap) {
+/* Sony's file to <data>/app.db.copy.new; NULL = ok, else why not. The last
+ * good app.db.copy is not touched. */
+static const char *copy_file(char *dst, size_t cap, char *final, size_t fcap) {
   char dir[600], src[600];
   size_t len = 0;
   char *buf;
   int rc;
   snprintf(src, sizeof(src), "%s%s", plat_root(), SRC_PATH);
   if (config_data_dir(dir, sizeof(dir)) ||
-      (size_t)snprintf(copy, cap, "%s/%s", dir, COPY_NAME) >= cap) {
-    return -1;
+      (size_t)snprintf(dst, cap, "%s/%s", dir, NEW_NAME) >= cap ||
+      (size_t)snprintf(final, fcap, "%s/%s", dir, COPY_NAME) >= fcap) {
+    return "data folder not usable";
   }
   if (!(buf = config_read_small(src, PS5H_SONYTIME_MAX_COPY, &len))) {
-    return -1;
+    return errno == ENOENT ? "file missing"
+         : errno == EINVAL ? "file too large or not a regular file"
+                           : "file not readable";
   }
-  rc = config_write_atomic(copy, buf, len);
+  rc = config_write_atomic(dst, buf, len);
   free(buf);
-  return rc ? -1 : 0;
+  return rc ? "copy could not be written" : NULL;
 }
 
 /* file:/path?immutable=1 with the few characters that end a URI path escaped. */
@@ -104,7 +115,23 @@ static bool make_uri(const char *path, char *out, size_t cap) {
 
 /* --- reading ------------------------------------------------------------ */
 
-/* Names of the tbl_iconinfo_* tables. Not logged, not output. */
+/* tbl_iconinfo_<hex user id>; anything else is none of our business. */
+static bool is_user_table(const char *name) {
+  const char *p = name + sizeof(TABLE_PREFIX) - 1;
+  if (strncmp(name, TABLE_PREFIX, sizeof(TABLE_PREFIX) - 1) || !*p) {
+    return false;
+  }
+  for (; *p; p++) {
+    if (!((*p >= '0' && *p <= '9') || (*p >= 'a' && *p <= 'f') ||
+          (*p >= 'A' && *p <= 'F'))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/* Names of the user tables (not logged, not output). -1 = error, -2 = more
+ * than MAX_TABLES. */
 static int list_tables(sqlite3 *db, char names[][MAX_NAME]) {
   sqlite3_stmt *s;
   int n = 0, rc;
@@ -115,17 +142,16 @@ static int list_tables(sqlite3 *db, char names[][MAX_NAME]) {
   }
   while ((rc = sqlite3_step(s)) == SQLITE_ROW) {
     const char *name = (const char *)sqlite3_column_text(s, 0);
-    if (name && !strncmp(name, TABLE_PREFIX, sizeof(TABLE_PREFIX) - 1) &&
-        strlen(name) < MAX_NAME) {
+    if (name && strlen(name) < MAX_NAME && is_user_table(name)) {
       if (n == MAX_TABLES) {
-        n = -1;
-        break;
+        sqlite3_finalize(s);
+        return -2;
       }
       strcpy(names[n++], name);
     }
   }
   sqlite3_finalize(s);
-  return rc == SQLITE_DONE || n < 0 ? n : -1;
+  return rc == SQLITE_DONE ? n : -1;
 }
 
 /* Both columns we use exist (looked up with PRAGMA table_info only). */
@@ -200,26 +226,33 @@ static bool sum_table(sqlite3 *db, const char *table, entry **list, int *n) {
   return rc == SQLITE_DONE;
 }
 
-static int read_db(const char *copy_path) {
+/* Reads the copy at path; NULL = ok (the list is replaced), else why not. */
+static const char *read_db(const char *path) {
   static char names[MAX_TABLES][MAX_NAME];
   char uri[1500];
   sqlite3 *db = NULL;
   entry *list = NULL;
-  int n = 0, tables, rc = -1;
-  if (!make_uri(copy_path, uri, sizeof(uri))) {
-    return -1;
+  const char *why = NULL;
+  int n = 0, tables;
+  if (!make_uri(path, uri, sizeof(uri))) {
+    return "path too long";
   }
   if (sqlite3_open_v2(uri, &db, SQLITE_OPEN_READONLY | SQLITE_OPEN_URI, NULL)) {
-    log_msg("app.db: copy could not be opened");
+    why = "copy could not be opened";
     goto out;
   }
-  if ((tables = list_tables(db, names)) <= 0) {
-    log_msg("app.db: no user tables found");
+  tables = list_tables(db, names);
+  if (tables == -2) {
+    why = "more than 64 user tables";
+    goto out;
+  }
+  if (tables <= 0) {
+    why = "no user tables found";
     goto out;
   }
   for (int i = 0; i < tables; i++) {
     if (!has_columns(db, names[i]) || !sum_table(db, names[i], &list, &n)) {
-      log_msg("app.db: layout not as expected");
+      why = "layout not as expected";
       goto out;
     }
   }
@@ -228,33 +261,44 @@ static int read_db(const char *copy_path) {
   st.list = list;
   st.n = n;
   list = NULL;
-  rc = 0;
 out:
   free(list);
   sqlite3_close(db);
-  return rc;
+  return why;
 }
 
 int sonytime_refresh(int64_t now_ms) {
-  char copy[700];
-  int rc;
+  char attempt[700] = "", copy[700] = "";
+  const char *why;
   if (!power_is_on()) {
     return 1;
   }
-  if (st.have_run && now_ms >= st.last_ms &&
-      now_ms - st.last_ms < (int64_t)PS5H_SONYTIME_REFRESH_S * 1000) {
+  if (st.have_run && now_ms >= st.last_ms && now_ms < st.next_ms) {
     return 1;
   }
   st.have_run = true;
   st.last_ms = now_ms;
-  if (copy_file(copy, sizeof(copy))) {
-    log_msg("app.db: not readable (%s)", errno == ENOENT ? "missing" : "error");
-    clear_list();
+  why = copy_file(attempt, sizeof(attempt), copy, sizeof(copy));
+  if (!why) {
+    why = read_db(attempt);
+  }
+  if (why) {
+    /* Sony's number only grows: what was read before stays. A short wait,
+     * and one log line per streak. */
+    if (attempt[0]) {
+      unlink(attempt);
+    }
+    st.next_ms = now_ms + (int64_t)PS5H_SONYTIME_RETRY_S * 1000;
+    if (!st.fail_logged) {
+      log_msg("app.db: %s", why);
+      st.fail_logged = true;
+    }
     return -1;
   }
-  rc = read_db(copy);
-  if (rc) {
-    clear_list();
+  if (rename(attempt, copy)) {
+    unlink(attempt);
   }
-  return rc;
+  st.next_ms = now_ms + (int64_t)PS5H_SONYTIME_REFRESH_S * 1000;
+  st.fail_logged = false;
+  return 0;
 }

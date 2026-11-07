@@ -31,11 +31,12 @@ LDADD  := $(MICRODNS)/builddir/src/libmicrodns.a \
 SQLITE_OBJ := build/sqlite3.o
 SQLITE_DEFS := -DSQLITE_OMIT_LOAD_EXTENSION -DSQLITE_THREADSAFE=0 \
                -DSQLITE_DEFAULT_MEMSTATUS=0 -DSQLITE_OMIT_DEPRECATED \
-               -DSQLITE_DQS=0 -DSQLITE_MAX_MMAP_SIZE=0
+               -DSQLITE_DQS=0 -DSQLITE_MAX_MMAP_SIZE=0 \
+               -DSQLITE_TEMP_STORE=3
 
 all: $(ELF)
 
-$(SQLITE_OBJ): third_party/sqlite/sqlite3.c third_party/sqlite/sqlite3.h
+$(SQLITE_OBJ): third_party/sqlite/sqlite3.c third_party/sqlite/sqlite3.h Makefile
 	@mkdir -p $(dir $@)
 	$(CC) -Os -w $(SQLITE_DEFS) -c -o $@ third_party/sqlite/sqlite3.c
 
