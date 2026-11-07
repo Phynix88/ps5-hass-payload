@@ -104,7 +104,18 @@ Success answers carry `"result":"ok"`. `<ID>` must match `^[A-Z]{4}[0-9]{5}$`.
   `storage` values null and `payloads` empty; `uptime_s`, `payload_uptime_s`, `apps_etag` (the last known one) and
   `fan` (the last known values) come from memory or the clock. The fan watcher, the app rescan and keep-awake pause
   too, and continue when the state is `on` again. A console that cannot report its power state counts as `on`.
-  Requests that act on the console (launch, close, rest mode, power off, notify, fan) are not blocked.
+  See [Outside "on"](#outside-on) for what requests do then.
+
+### Outside "on"
+
+While `power_state` is not `on`, requests that would call a console function are refused with
+`409 not_on`: `POST /apps/<ID>/launch`, `/apps/running/close`, `/power/standby`, `/power/off`, `/notify`, `/fan`,
+`/pair/start`, `/pair/finish` (pairing shows its code on the TV) and `/keep_awake` with `{"on":true}`. Switching
+keep-awake off is always allowed. `GET /info`, `/state` and `/apps` keep working without any console call: `/info`
+shows `model` and `firmware` as read while the console was `on` (empty strings if that has not happened yet),
+`/apps` the last list. A client that wants to act on a console in rest mode wakes it first (for example with the
+PlayStation 5 integration) and retries. The payload's own notice about a busy port is skipped outside `on` and
+sent once the console is `on` again.
 
 ### Fan threshold (since v0.2)
 
@@ -169,7 +180,7 @@ fields and endpoints go away in a later version.
 | 403 | `origin_forbidden`, `browser_guard`, `host_forbidden`, `address_forbidden` | |
 | 404 | `not_found`, `not_installed` | |
 | 405 | `method_not_allowed` | |
-| 409 | `no_code`, `code_exhausted`, `token_limit`, `other_app_running`, `no_user`, `title_mismatch`, `no_app`, `fan_above_stock`, `not_available`, `already_allowed` | |
+| 409 | `no_code`, `code_exhausted`, `token_limit`, `other_app_running`, `no_user`, `title_mismatch`, `no_app`, `fan_above_stock`, `not_available`, `already_allowed`, `not_on` | |
 | 411 | `length_required` (chunked body, or `POST` without `Content-Length`) | |
 | 413 | `body_too_large` (more than 4096 bytes) | |
 | 429 | `locked`, `rate_limited` | `retry_after` (seconds) |

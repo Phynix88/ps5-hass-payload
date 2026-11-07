@@ -39,7 +39,7 @@ struct fake_state {
   int fan_set_rc;
   int fan_set_calls;
   /* Every call that reaches the console, old and new (not the clocks, root,
-   * capabilities, model, firmware, addresses, randomness, plat_power_state):
+   * capabilities, addresses, randomness, plat_power_state):
    * what a test checks to prove the console is left alone. */
   int reads;
   /* v0.4: every call below except plat_power_state() also adds to sony_calls
@@ -47,6 +47,7 @@ struct fake_state {
    * that is false makes the call fail without counting. */
   int sony_calls;
   int power_state; /* 1000 on */
+  bool power_from_file; /* host server: <root>/fake-power-state overrides it */
   int power_state_rc;
   int power_state_calls;
   int focused_app_id;
@@ -69,8 +70,8 @@ extern struct fake_state fake;
 
 /* Defaults: idle console, user logged in, all sensors present, root "". */
 void fake_reset(void);
-/* PS5HASS_ROOT, PS5HASS_FAKE_NO_USER, PS5HASS_FAKE_POWER_STATE (for the host
- * server). */
+/* PS5HASS_ROOT, PS5HASS_FAKE_NO_USER (for the host server). The host server
+ * also follows the number in <root>/fake-power-state, if the file exists. */
 void fake_init_from_env(void);
 
 #endif

@@ -16,6 +16,7 @@ static jsmntok_t tok[1024];
 static void setup(void) {
   char cmd[700];
   fake_reset();
+  info_cache_reset();
   snprintf(fake.root, sizeof(fake.root), "%s", t_tmpdir());
   snprintf(cmd, sizeof(cmd), "cp -R tests/data/apps/. '%s'", fake.root);
   if (system(cmd)) {

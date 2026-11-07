@@ -343,19 +343,45 @@ def test_keep_awake_switch(paired):
     assert status == 200 and doc["keep_awake"] is False
 
 
-def test_state_while_resting_has_no_readings(tmp_path):
-    c = Console(tmp_path, env_extra={"PS5HASS_FAKE_POWER_STATE": "500"})
-    try:
-        c.pair()
-        state = c.get("/api/v1/state")[1]
-        validate("state", state)
-        assert state["power_state"] == "rest"
-        assert state["in_app"] is False and state["app"] is None
-        assert state["temps"] == {"cpu": None, "soc": None}
-        assert state["fan_raw"] is None and state["payloads"] == []
-        assert all(v is None for v in state["storage"].values())
-    finally:
-        c.stop()
+def go_to_rest(c, value="500"):
+    """The host server follows <root>/fake-power-state; each request makes one
+    pass of its loop, which reads the file."""
+    (c.root / "fake-power-state").write_text(value)
+    for _ in range(40):
+        if c.get("/api/v1/state")[1]["power_state"] != "on":
+            return
+        time.sleep(0.05)
+    raise AssertionError("power state did not change")
+
+
+def test_state_while_resting_has_no_readings(paired):
+    go_to_rest(paired)
+    state = paired.get("/api/v1/state")[1]
+    validate("state", state)
+    assert state["power_state"] == "rest"
+    assert state["in_app"] is False and state["app"] is None
+    assert state["temps"] == {"cpu": None, "soc": None}
+    assert state["fan_raw"] is None and state["payloads"] == []
+    assert all(v is None for v in state["storage"].values())
+
+
+def test_actions_refused_while_resting(paired):
+    (paired.root / "fake-notify.txt").unlink()  # the pairing code
+    go_to_rest(paired)
+    for path, body in (
+        ("/api/v1/pair/start", {}),
+        ("/api/v1/power/standby", {}),
+        ("/api/v1/notify", {"message": "x"}),
+        ("/api/v1/fan", {"threshold_c": 70}),
+        ("/api/v1/keep_awake", {"on": True}),
+    ):
+        status, doc, _ = paired.post(path, body)
+        assert status == 409 and doc["error"] == "not_on", path
+        validate("error", doc)
+    assert not (paired.root / "fake-notify.txt").exists()
+    status, info, _ = paired.get("/api/v1/info")
+    assert status == 200
+    validate("info", info)
 
 
 def test_old_permission_keys_in_config_are_ignored(tmp_path):

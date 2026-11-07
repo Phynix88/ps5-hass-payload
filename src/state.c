@@ -111,14 +111,29 @@ void state_json(jw_t *w, const app_list *apps, int64_t start_ms) {
   }
 }
 
+/* Model and firmware never change: asked once, and only while "on". */
+static struct {
+  bool have;
+  char model[64], fw[16];
+} cache;
+
+void info_cache_refresh(void) {
+  if (cache.have || !power_is_on()) {
+    return;
+  }
+  plat_model(cache.model);
+  plat_firmware(cache.fw);
+  cache.have = true;
+}
+
+void info_cache_reset(void) { memset(&cache, 0, sizeof(cache)); }
+
 void info_json(jw_t *w, const config *c, const char *device_id,
                bool mdns_running) {
-  char model[64], fw[16];
   plat_caps caps = plat_capabilities();
   const char *err = log_last_error();
 
-  plat_model(model);
-  plat_firmware(fw);
+  info_cache_refresh();
   jw_key(w, "name");
   jw_cstr(w, "ps5-hass");
   jw_key(w, "version");
@@ -130,9 +145,9 @@ void info_json(jw_t *w, const config *c, const char *device_id,
   jw_key(w, "device_id");
   jw_cstr(w, device_id);
   jw_key(w, "model");
-  jw_cstr(w, model);
+  jw_cstr(w, cache.model);
   jw_key(w, "firmware");
-  jw_cstr(w, fw);
+  jw_cstr(w, cache.fw);
   jw_key(w, "paired");
   jw_bool(w, auth_paired());
   jw_key(w, "power_actions"); /* v0.3 name: the console can enter rest mode */

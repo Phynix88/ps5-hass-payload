@@ -16,6 +16,7 @@ static struct {
   int64_t last_check_ms;
   int64_t restores[PS5H_FAN_FIGHT_RESTORES]; /* ring of restore times, 0 = unused */
   int next_restore;
+  bool init_pending; /* fan_init ran outside "on" and did nothing */
 } st;
 
 static bool plausible_stock(int v) {
@@ -60,7 +61,8 @@ void fan_init(config *c) {
   memset(&st, 0, sizeof(st));
   st.current = -1;
   if (!power_is_on()) {
-    return; /* the console is not asked outside "on" */
+    st.init_pending = true; /* done by the first fan_tick while on */
+    return;
   }
   if ((v = read_value()) >= 0 && !c->fan_stock_c && plausible_stock(v) &&
       v != c->fan_target_c && v != c->fan_written_c) {
@@ -129,6 +131,9 @@ void fan_tick(config *c, int64_t now_ms) {
   int v;
   if (!power_is_on()) {
     return;
+  }
+  if (st.init_pending) {
+    fan_init(c);
   }
   if (st.last_check_ms && now_ms - st.last_check_ms < PS5H_FAN_CHECK_S * 1000) {
     return;

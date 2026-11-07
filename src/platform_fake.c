@@ -51,9 +51,7 @@ void fake_init_from_env(void) {
   if (root) {
     snprintf(fake.root, sizeof(fake.root), "%s", root);
   }
-  if (getenv("PS5HASS_FAKE_POWER_STATE")) {
-    fake.power_state = atoi(getenv("PS5HASS_FAKE_POWER_STATE"));
-  }
+  fake.power_from_file = true;
   if (getenv("PS5HASS_FAKE_NO_USER")) {
     fake.user_rc = -1;
     fake.user_id = 0;
@@ -192,8 +190,14 @@ int plat_storage_mb(const char *path, int64_t *free_mb, int64_t *total_mb) {
   return 0;
 }
 
-void plat_model(char out[64]) { snprintf(out, 64, "%s", fake.model); }
-void plat_firmware(char out[16]) { snprintf(out, 16, "%s", fake.firmware); }
+void plat_model(char out[64]) {
+  fake.reads++;
+  snprintf(out, 64, "%s", fake.model);
+}
+void plat_firmware(char out[16]) {
+  fake.reads++;
+  snprintf(out, 16, "%s", fake.firmware);
+}
 
 int plat_ipv4_list(uint32_t *addrs, int max) {
   int n = fake.n_ipv4 < max ? fake.n_ipv4 : max;
@@ -239,6 +243,17 @@ int plat_power_off(void) {
 
 int plat_power_state(void) {
   fake.power_state_calls++;
+  if (fake.power_from_file) {
+    char path[600], buf[16] = {0};
+    int fd;
+    snprintf(path, sizeof(path), "%s/fake-power-state", fake.root);
+    if ((fd = open(path, O_RDONLY)) >= 0) {
+      if (read(fd, buf, sizeof(buf) - 1) > 0) {
+        fake.power_state = atoi(buf);
+      }
+      close(fd);
+    }
+  }
   if (!fake.caps.power_state) {
     return -1;
   }

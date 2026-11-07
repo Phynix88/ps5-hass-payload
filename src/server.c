@@ -20,6 +20,7 @@
 #include "mdns.h"
 #include "platform.h"
 #include "power.h"
+#include "state.h"
 
 #define IN_CAP (PS5H_MAX_HEADER + PS5H_MAX_BODY + 1)
 #define MAX_IFACES 8
@@ -181,10 +182,12 @@ static void ensure_listener(server *s, int64_t now) {
     int e = errno;
     snprintf(text, sizeof(text), "ps5-hass: port %u busy, retrying",
              (unsigned)s->port);
-    plat_notify(text);
+    if (power_is_on()) { /* outside "on" the console is left alone */
+      plat_notify(text);
+      s->bind_notified = true;
+    }
     log_error("bind port %u failed (errno %d), retrying every %d s",
               (unsigned)s->port, e, PS5H_BIND_RETRY_S);
-    s->bind_notified = true;
   }
 }
 
@@ -216,6 +219,7 @@ static void rebind(server *s, int64_t now, bool drop_conns, bool is_error,
 static void periodic(server *s, int64_t now) {
   int64_t off;
   power_tick(now); /* first: every other module asks power_is_on() */
+  info_cache_refresh();
   off = clock_offset();
   int64_t gap = now - s->last_step_ms;
   s->last_step_ms = now;

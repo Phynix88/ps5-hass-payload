@@ -16,6 +16,7 @@
 #include "power.h"
 #include "router.h"
 #include "server.h"
+#include "state.h"
 
 #ifdef PS5H_HOST
 #include "platform_fake.h"
@@ -48,6 +49,7 @@ int main(void) {
   control_init();
   power_init();
   power_tick(plat_mono_ms());
+  info_cache_refresh();
   fan_init(&cfg);
   apps_scan(&apps);
 

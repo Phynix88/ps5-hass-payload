@@ -275,6 +275,29 @@ static bool needs_token(route_id r) {
   return r != R_INFO && r != R_PAIR_START && r != R_PAIR_FINISH;
 }
 
+/* Routes that call a console function: refused outside "on" (power state
+ * 1000), when the console must be left alone. Pairing counts: it shows the
+ * code on the TV. */
+static bool needs_console(route_id r) {
+  switch (r) {
+  case R_PAIR_START:
+  case R_PAIR_FINISH:
+  case R_LAUNCH:
+  case R_CLOSE:
+  case R_STANDBY:
+  case R_NOTIFY:
+  case R_POWER_OFF:
+  case R_FAN:
+    return true;
+  default:
+    return false;
+  }
+}
+
+static void not_on(route_resp *out) {
+  fail(out, 409, "not_on", "the console is not on (rest mode or changing state)");
+}
+
 /* --- handlers ---------------------------------------------------------- */
 
 static void h_info(route_ctx *ctx, route_resp *out) {
@@ -575,6 +598,10 @@ static void h_keep_awake(const jr_t *r, route_resp *out) {
     fail(out, 400, "bad_request", "on must be true or false");
     return;
   }
+  if (on && !power_is_on()) {
+    not_on(out); /* switching off is always fine: no console call */
+    return;
+  }
   power_set_keep_awake(on);
   w = ok(out);
   jw_key(w, "keep_awake");
@@ -688,6 +715,12 @@ void route(route_ctx *ctx, const http_req *req, uint32_t peer,
   /* 6: token */
   if (needs_token(r) && (slot = auth_check(req->authorization)) < 0) {
     fail(out, 401, "unauthorized", "missing or invalid token");
+    return;
+  }
+
+  /* 6b: nothing that touches the console outside "on" */
+  if (needs_console(r) && !power_is_on()) {
+    not_on(out);
     return;
   }
 

@@ -14,16 +14,21 @@
 #include "control.h"
 #include "fan.h"
 #include "platform_fake.h"
+#include "power.h"
 #include "router.h"
 #include "server.h"
+#include "state.h"
 
 static config cfg;
 static app_list apps;
 static route_ctx ctx;
 
-static server *setup(uint16_t port) {
+static server *setup_in_state(uint16_t port, int power_state) {
   server *s;
   fake_reset();
+  fake.power_state = power_state;
+  info_cache_reset();
+  power_init();
   snprintf(fake.root, sizeof(fake.root), "%s", t_tmpdir());
   config_load(&cfg);
   auth_init(&cfg);
@@ -38,6 +43,8 @@ static server *setup(uint16_t port) {
   server_step(s, 0); /* binds */
   return s;
 }
+
+static server *setup(uint16_t port) { return setup_in_state(port, 1000); }
 
 static void pump(server *s, int n) {
   for (int i = 0; i < n; i++) {
@@ -386,6 +393,50 @@ static void test_server_bind_busy_retries_and_notifies_once(void) {
   server_free(s);
 }
 
+static void test_server_bind_busy_outside_on_does_not_notify(void) {
+  struct sockaddr_in a;
+  socklen_t alen = sizeof(a);
+  int blocker = socket(AF_INET, SOCK_STREAM, 0), conns, binds;
+  server *s;
+  memset(&a, 0, sizeof(a));
+  a.sin_family = AF_INET;
+  a.sin_addr.s_addr = htonl(INADDR_ANY);
+  T_EQ_INT(bind(blocker, (struct sockaddr *)&a, sizeof(a)), 0);
+  T_EQ_INT(listen(blocker, 1), 0);
+  getsockname(blocker, (struct sockaddr *)&a, &alen);
+  s = setup_in_state(ntohs(a.sin_port), 500);
+  server_debug(s, &conns, &binds);
+  T_EQ_INT(binds, 0);
+  T_EQ_INT(fake.notify_count, 0);
+  T_EQ_INT(fake.reads, 0);
+  fake.mono_ms += 10001;
+  pump(s, 2);
+  T_EQ_INT(fake.notify_count, 0);
+  /* the console is on again and the port is still busy: now it tells */
+  fake.power_state = 1000;
+  fake.mono_ms += 10001;
+  pump(s, 2);
+  T_EQ_INT(fake.notify_count, 1);
+  T_ASSERT(strstr(fake.last_notify, "busy"));
+  close(blocker);
+  server_free(s);
+}
+
+static void test_fan_init_deferred_until_on(void) {
+  server *s;
+  fake.fan_value = 0;
+  s = setup_in_state(0, 500);
+  fake.fan_value = 91;
+  fan_init(&cfg); /* outside "on": does nothing */
+  T_EQ_INT(cfg.fan_stock_c, 0);
+  fake.power_state = 1000;
+  fake.mono_ms += 6000;
+  fake.wall_s += 6;
+  pump(s, 2);
+  T_EQ_INT(cfg.fan_stock_c, 91); /* learned by the first tick while on */
+  server_free(s);
+}
+
 static void test_fan_tick_runs(void) {
   int rc;
   server *s = setup(0);
@@ -411,6 +462,8 @@ int main(void) {
   T_RUN(test_server_streams_large_icon);
   T_RUN(test_server_wake_rebinds);
   T_RUN(test_server_bind_busy_retries_and_notifies_once);
+  T_RUN(test_server_bind_busy_outside_on_does_not_notify);
+  T_RUN(test_fan_init_deferred_until_on);
   T_RUN(test_server_suspend_gap_rebinds);
   T_RUN(test_server_iface_change_rebinds);
   T_RUN(test_server_accept_error_rebinds_with_backoff);

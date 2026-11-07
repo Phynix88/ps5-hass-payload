@@ -14,6 +14,7 @@
 #include "platform_fake.h"
 #include "power.h"
 #include "router.h"
+#include "state.h"
 
 static config cfg;
 static app_list apps;
@@ -35,6 +36,7 @@ static void setup(void) {
   auth_init(&cfg);
   control_init();
   power_init();
+  info_cache_reset();
   apps_free(&apps);
   memset(&ctx, 0, sizeof(ctx));
   ctx.cfg = &cfg;
@@ -544,6 +546,78 @@ static void test_state_outside_on_leaves_console_alone(void) {
   T_ASSERT(strstr(body, "\"uptime_s\":100"));
 }
 
+static void rest(int state) {
+  fake.power_state = state;
+  power_tick(fake.mono_ms);
+}
+
+static void test_gated_routes_refuse_outside_on(void) {
+  static const struct {
+    const char *method, *path, *body;
+  } r[] = {
+      {"POST", "/api/v1/apps/PPSA00001/launch", "{}"},
+      {"POST", "/api/v1/apps/running/close", "{}"},
+      {"POST", "/api/v1/power/standby", "{}"},
+      {"POST", "/api/v1/power/off", "{}"},
+      {"POST", "/api/v1/notify", "{\"message\":\"x\"}"},
+      {"POST", "/api/v1/fan", "{\"threshold_c\":70}"},
+      {"POST", "/api/v1/keep_awake", "{\"on\":true}"},
+      {"POST", "/api/v1/pair/start", "{}"},
+      {"POST", "/api/v1/pair/finish",
+       "{\"code\":\"123456\",\"client_id\":\"0b7e2f1c-1111-4222-8333-944445555666\","
+       "\"label\":\"x\"}"},
+  };
+  static const int states[] = {500, 300, 100, 42};
+  for (size_t k = 0; k < sizeof(states) / sizeof(states[0]); k++) {
+    setup();
+    pair();
+    rest(states[k]);
+    fake.reads = fake.sony_calls = fake.notify_count = 0;
+    for (size_t i = 0; i < sizeof(r) / sizeof(r[0]); i++) {
+      T_EQ_INT(call(r[i].method, r[i].path, r[i].body), 409);
+      T_ASSERT(strstr(body, "\"error\":\"not_on\""));
+    }
+    T_EQ_INT(fake.reads, 0);
+    T_EQ_INT(fake.sony_calls, 0);
+    T_EQ_INT(fake.notify_count, 0);
+    T_ASSERT(!power_keep_awake());
+  }
+}
+
+static void test_unauthenticated_pair_refused_outside_on(void) {
+  setup();
+  rest(500);
+  T_EQ_INT(call("POST", "/api/v1/pair/start", "{}"), 409);
+  T_ASSERT(strstr(body, "\"error\":\"not_on\""));
+  T_EQ_INT(fake.notify_count, 0);
+}
+
+static void test_keep_awake_off_and_reads_work_outside_on(void) {
+  setup();
+  pair();
+  T_EQ_INT(call("POST", "/api/v1/keep_awake", "{\"on\":true}"), 200);
+  rest(500);
+  fake.reads = 0;
+  T_EQ_INT(call("POST", "/api/v1/keep_awake", "{\"on\":false}"), 200);
+  T_ASSERT(!power_keep_awake());
+  T_EQ_INT(call("GET", "/api/v1/apps", NULL), 200);
+  T_EQ_INT(call("GET", "/api/v1/info", NULL), 200);
+  T_EQ_INT(call("GET", "/api/v1/state", NULL), 200);
+  T_EQ_INT(fake.reads, 0);
+}
+
+static void test_info_outside_on_makes_no_console_call(void) {
+  setup();
+  rest(500);
+  T_EQ_INT(call("GET", "/api/v1/info", NULL), 200);
+  T_EQ_INT(fake.reads, 0);
+  T_EQ_INT(fake.sony_calls, 0);
+  T_ASSERT(strstr(body, "\"model\":\"\""));
+  rest(1000);
+  T_EQ_INT(call("GET", "/api/v1/info", NULL), 200);
+  T_ASSERT(strstr(body, "\"model\":\"CFI-TEST\""));
+}
+
 static void test_grant_start_answers_already_allowed(void) {
   int shown;
   setup();
@@ -630,6 +704,10 @@ int main(void) {
   T_RUN(test_keep_awake_unavailable_409);
   T_RUN(test_state_has_power_state);
   T_RUN(test_state_outside_on_leaves_console_alone);
+  T_RUN(test_gated_routes_refuse_outside_on);
+  T_RUN(test_unauthenticated_pair_refused_outside_on);
+  T_RUN(test_keep_awake_off_and_reads_work_outside_on);
+  T_RUN(test_info_outside_on_makes_no_console_call);
   T_RUN(test_grant_start_answers_already_allowed);
   T_RUN(test_grant_finish_answers_no_code);
   T_RUN(test_grant_revoke_is_noop_200);

@@ -13,6 +13,7 @@
 #include "power.h"
 #include "router.h"
 #include "server.h"
+#include "state.h"
 
 static config cfg;
 static app_list apps;
@@ -25,6 +26,7 @@ static void setup(void) {
   auth_init(&cfg);
   control_init();
   power_init();
+  info_cache_reset();
   apps_free(&apps);
   apps_scan(&apps);
   memset(&ctx, 0, sizeof(ctx));
@@ -112,11 +114,52 @@ static void test_keep_awake_failure_does_not_spin(void) {
 }
 
 static void test_state_json_while_on_reads_console(void) {
+  jw_t w;
   setup();
   power_tick(fake.mono_ms);
-  T_ASSERT(fake.reads == 0);
-  fan_init(&cfg);
-  T_ASSERT(fake.reads > 0); /* the counter does count */
+  T_EQ_INT(fake.reads, 0);
+  jw_init(&w);
+  jw_obj(&w);
+  state_json(&w, &apps, 0);
+  jw_end_obj(&w);
+  jw_free(&w);
+  T_ASSERT(fake.reads > 0); /* the counter does count, so zero means zero */
+}
+
+static void test_info_asks_the_console_once_and_only_while_on(void) {
+  jw_t w;
+  setup();
+  fake.power_state = 500;
+  power_tick(fake.mono_ms);
+  jw_init(&w);
+  jw_obj(&w);
+  info_json(&w, &cfg, ctx.device_id, true);
+  jw_end_obj(&w);
+  T_ASSERT(strstr(w.buf, "\"model\":\"\""));
+  jw_free(&w);
+  T_EQ_INT(fake.reads, 0);
+  fake.power_state = 1000;
+  power_tick(fake.mono_ms);
+  info_cache_refresh();
+  T_ASSERT(fake.reads > 0);
+  {
+    int after = fake.reads;
+    jw_init(&w);
+    jw_obj(&w);
+    info_json(&w, &cfg, ctx.device_id, true);
+    jw_end_obj(&w);
+    T_ASSERT(strstr(w.buf, "\"model\":\"CFI-TEST\""));
+    jw_free(&w);
+    fake.power_state = 300; /* and the cached value stays */
+    power_tick(fake.mono_ms);
+    jw_init(&w);
+    jw_obj(&w);
+    info_json(&w, &cfg, ctx.device_id, true);
+    jw_end_obj(&w);
+    T_ASSERT(strstr(w.buf, "\"model\":\"CFI-TEST\""));
+    jw_free(&w);
+    T_EQ_INT(fake.reads, after);
+  }
 }
 
 static void test_sony_calls_stop_outside_on(void) {
@@ -194,6 +237,7 @@ int main(void) {
   T_RUN(test_keep_awake_ticks_every_240s_only_when_on);
   T_RUN(test_keep_awake_failure_does_not_spin);
   T_RUN(test_state_json_while_on_reads_console);
+  T_RUN(test_info_asks_the_console_once_and_only_while_on);
   T_RUN(test_sony_calls_stop_outside_on);
   T_RUN(test_apps_scan_with_unknown_language_is_redone);
   apps_free(&apps);
