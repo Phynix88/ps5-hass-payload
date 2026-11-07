@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.4.2
+
+**Update from v0.4.1.** v0.4.1 did not see a minimised game (the console then reports no running app although the
+game stays in memory), so switching a payload that way could still hang a console.
+
+- `POST /payloads/start` and `/payloads/stop` answer `409 app_running` while a game or app is in memory, also
+  minimised: the check now also looks for a process named `eboot.bin`, and a process list that cannot be read counts
+  as a game.
+- CheatRunner is controllable again (no longer protected), only with no game in memory. ps5debug stays protected.
+- The console's "no app running" answer (`-1`) is told apart from real errors; any other negative value is now an
+  error (`/state` shows no app, play time ends the session at the last good sample) instead of "no app".
+
 ## v0.4.1
 
 **Update from v0.4.0.** v0.4.0 allowed stopping payloads while a game ran; stopping CheatRunner during a game hung

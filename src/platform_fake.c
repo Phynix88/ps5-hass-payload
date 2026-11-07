@@ -249,6 +249,9 @@ plat_caps plat_capabilities(void) { return fake.caps; }
 int plat_proc_names(plat_name *names, int max) {
   int n = fake.n_procs < max ? fake.n_procs : max;
   fake.reads++;
+  if (fake.procs_rc < 0) {
+    return fake.procs_rc;
+  }
   memcpy(names, fake.procs, (size_t)n * sizeof(plat_name));
   return n;
 }

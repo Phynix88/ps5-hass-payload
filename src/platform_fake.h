@@ -40,6 +40,7 @@ struct fake_state {
   plat_caps caps;
   plat_name procs[32];
   int n_procs;
+  int procs_rc; /* < 0: plat_proc_names fails with this code */
   int power_off_rc;
   int power_off_calls;
   int fan_value;   /* what the "device" holds */

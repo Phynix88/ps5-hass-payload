@@ -45,6 +45,41 @@ static void test_payloads_from_platform(void) {
   T_EQ_STR(out[0], "kstuff.elf");
 }
 
+static void test_game_in_memory(void) {
+  fake_reset();
+  T_ASSERT(!procs_game_in_memory()); /* nothing listed */
+  snprintf(fake.procs[0], 20, "SceSysCore.elf");
+  snprintf(fake.procs[1], 20, "ftpsrv.elf");
+  fake.n_procs = 2;
+  T_ASSERT(!procs_game_in_memory()); /* only system processes and payloads */
+  snprintf(fake.procs[2], 20, "eboot.bin");
+  fake.n_procs = 3;
+  T_ASSERT(procs_game_in_memory());
+  /* exact and case-sensitive */
+  snprintf(fake.procs[2], 20, "eboot.bin2");
+  T_ASSERT(!procs_game_in_memory());
+  snprintf(fake.procs[2], 20, "Eboot.bin");
+  T_ASSERT(!procs_game_in_memory());
+  snprintf(fake.procs[2], 20, "eboot");
+  T_ASSERT(!procs_game_in_memory());
+  fake_reset();
+}
+
+static void test_game_in_memory_fails_safe(void) {
+  fake_reset();
+  fake.procs_rc = -1; /* the list cannot be read */
+  T_ASSERT(procs_game_in_memory());
+  fake_reset();
+}
+
+static void test_payloads_empty_on_unreadable_list(void) {
+  char out[8][20];
+  fake_reset();
+  fake.procs_rc = -1;
+  T_EQ_INT(procs_payloads(out, 8), 0);
+  fake_reset();
+}
+
 static int64_t real_ms(void) {
   struct timeval tv;
   gettimeofday(&tv, NULL);
@@ -118,6 +153,9 @@ int main(void) {
   T_RUN(test_filter_keeps_truncated_19);
   T_RUN(test_filter_respects_max);
   T_RUN(test_payloads_from_platform);
+  T_RUN(test_game_in_memory);
+  T_RUN(test_game_in_memory_fails_safe);
+  T_RUN(test_payloads_empty_on_unreadable_list);
   T_RUN(test_stop_terms_first_then_kills);
   T_MAIN();
 }

@@ -53,7 +53,8 @@ const char *plat_root(void);
 int plat_random(uint8_t *buf, size_t n);
 /* Notification on the TV; ASCII only. */
 int plat_notify(const char *ascii);
-/* 1 = an app runs (out filled), 0 = none, < 0 = error. */
+/* 1 = an app runs (out filled), 0 = none, < 0 = error. A minimised game
+ * counts as none (the console reports no app for it). */
 int plat_running_app(plat_running *out);
 /* >= 0 = ok (new app id). */
 int plat_launch(const char *title_id);
@@ -75,7 +76,8 @@ void plat_firmware(char out[16]);
 int plat_ipv4_list(uint32_t *addrs, int max);
 /* What resolved on first use. */
 plat_caps plat_capabilities(void);
-/* Names (ki_comm) of all processes; returns the count. */
+/* Names (ki_comm) of all processes; returns the count, < 0 = the list could
+ * not be read. */
 int plat_proc_names(plat_name *names, int max);
 /* Power the console off (not rest mode). */
 int plat_power_off(void);

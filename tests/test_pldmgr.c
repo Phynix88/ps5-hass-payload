@@ -324,10 +324,11 @@ static void test_protected_names(void) {
   static const char *const prot[] = {
       "kstuff", "kstuff.elf", "KSTUFF", "kstuff-lite_v1.11.elf", "repo/kstuff@44444444",
       "etaHEN_2.5B.bin", "ETAHEN", "elfldr.elf", "my-elfldr-x", "pldmgr", "PLDMGR.elf",
-      "ps5-hass.elf", "Ps5-Hass", "CheatRunner", "CheatRunner_v0.18.1.elf", "cheatrunner",
-      "repo/CheatRunner@22222222", "my-cheat-tool", "ps5debug", "ps5debug-ng", "PS5Debug_v1.elf"};
+      "ps5-hass.elf", "Ps5-Hass", "ps5debug", "ps5debug-ng", "PS5Debug_v1.elf"};
+  /* CheatRunner is controllable again since v0.4.2 (only with no game in memory) */
   static const char *const open[] = {"ftpsrv.elf", "websrv_v0.34.elf", "ps5upload_v7.1.19.elf", "ShadowMountPlus_1.7beta7.elf",
-                                     "", "ps5"};
+                                     "", "ps5", "CheatRunner", "CheatRunner_v0.18.1.elf", "repo/CheatRunner@22222222",
+                                     "cheatrunner"};
   for (size_t i = 0; i < sizeof(prot) / sizeof(prot[0]); i++) {
     T_ASSERT(pldmgr_is_protected(prot[i]));
   }
@@ -356,7 +357,7 @@ static void test_list_flags(void) {
   x = find(e, n, "repo/websrv@11111111");
   T_ASSERT(x && !x->running && x->pid == 0);
   x = find(e, n, "repo/CheatRunner@22222222"); /* no name: the id */
-  T_ASSERT(x && !x->running && x->protected_); /* cheat payloads: protected since v0.4.1 */
+  T_ASSERT(x && !x->running && !x->protected_); /* controllable again (v0.4.2) */
   T_EQ_STR(x->name, "CheatRunner");
   x = find(e, n, "repo/smp@33333333");
   T_ASSERT(x && x->running && x->pid == 98); /* only the file name matches */
@@ -416,7 +417,7 @@ static void test_app_running_blocks_start_and_stop(void) {
   T_EQ_INT(total_reqs(), 0); /* not even a list request */
   /* protected stays 403 (checked first), a bad slot stays a bad slot */
   T_EQ_INT(pldmgr_stop("repo/kstuff@44444444"), -EPERM);
-  T_EQ_INT(pldmgr_start("repo/CheatRunner@22222222"), -EPERM);
+  T_EQ_INT(pldmgr_start("repo/ps5debug-ng@12121212"), -EPERM);
   T_EQ_INT(pldmgr_start(""), -EINVAL);
   T_EQ_INT(total_reqs(), 0);
   /* the game closes: payload control works again */
@@ -427,13 +428,55 @@ static void test_app_running_blocks_start_and_stop(void) {
   fake_reset();
 }
 
+/* A minimised game is no "running app" for the console (it reports none) but
+ * stays in memory as eboot.bin; CheatRunner attaches to it. */
+static void test_minimised_game_blocks_start_and_stop(void) {
+  fake_reset();
+  fake.running.app_id = 0; /* the console reports no app ... */
+  snprintf(fake.procs[0], 20, "eboot.bin"); /* ... but the game is there */
+  fake.n_procs = 1;
+  srv_start(M_NORMAL);
+  T_EQ_INT(pldmgr_stop("repo/ftpsrv@e8cce5d1"), -EBUSY);
+  T_EQ_INT(pldmgr_start("repo/websrv@11111111"), -EBUSY);
+  T_EQ_INT(pldmgr_start("repo/CheatRunner@22222222"), -EBUSY);
+  T_EQ_INT(total_reqs(), 0);
+  /* the game is closed: payload control works again */
+  fake.n_procs = 0;
+  T_EQ_INT(pldmgr_stop("repo/ftpsrv@e8cce5d1"), 0);
+  T_EQ_INT(count_reqs("POST /process_kill?pid=97 HTTP/1.1"), 1);
+  srv_stop();
+  fake_reset();
+}
+
+static void test_unreadable_process_list_blocks(void) {
+  fake_reset();
+  fake.procs_rc = -1;
+  srv_start(M_NORMAL);
+  T_EQ_INT(pldmgr_stop("repo/ftpsrv@e8cce5d1"), -EBUSY);
+  T_EQ_INT(pldmgr_start("repo/websrv@11111111"), -EBUSY);
+  T_EQ_INT(total_reqs(), 0);
+  srv_stop();
+  fake_reset();
+}
+
+static void test_nothing_in_memory_cheatrunner_toggles(void) {
+  fake_reset();
+  snprintf(fake.procs[0], 20, "SceSysCore.elf");
+  fake.n_procs = 1;
+  srv_start(M_NORMAL);
+  T_EQ_INT(pldmgr_start("repo/CheatRunner@22222222"), 0);
+  T_EQ_INT(count_reqs("POST /loadpayload:repo/CheatRunner%4022222222 HTTP/1.1"), 1);
+  srv_stop();
+  fake_reset();
+}
+
 static void test_unreadable_running_app_blocks(void) {
   fake_reset();
   fake.running.app_id = 0;
   srv_start(M_NORMAL);
   /* plat_running_app() fails when its capability is missing or the call
    * errors: the fake reports < 0 through running_rc */
-  fake.running_rc = -5;
+  fake.running_rc = -5; /* any console error: -1 alone means "nothing runs" */
   T_EQ_INT(pldmgr_stop("repo/ftpsrv@e8cce5d1"), -EBUSY);
   T_EQ_INT(pldmgr_start("repo/websrv@11111111"), -EBUSY);
   T_EQ_INT(total_reqs(), 0);
@@ -635,6 +678,9 @@ int main(void) {
   T_RUN(test_protected_never_started);
   T_RUN(test_start_refuses_running);
   T_RUN(test_app_running_blocks_start_and_stop);
+  T_RUN(test_minimised_game_blocks_start_and_stop);
+  T_RUN(test_unreadable_process_list_blocks);
+  T_RUN(test_nothing_in_memory_cheatrunner_toggles);
   T_RUN(test_unreadable_running_app_blocks);
   T_RUN(test_start_posts_loadpayload);
   T_RUN(test_stop_uses_pid_from_process_list);

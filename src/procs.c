@@ -54,9 +54,28 @@ int procs_payloads(plat_name *out, int max) {
   if (!all) {
     return 0;
   }
-  n = procs_filter(all, plat_proc_names(all, PS5H_MAX_PROCS), out, max);
+  n = plat_proc_names(all, PS5H_MAX_PROCS);
+  n = n > 0 ? procs_filter(all, n, out, max) : 0;
   free(all);
   return n;
+}
+
+bool procs_game_in_memory(void) {
+  plat_name *all = calloc(PS5H_MAX_PROCS, sizeof(plat_name));
+  bool found = true; /* fail safe: an unreadable or cut list counts as a game */
+  int n;
+  if (!all) {
+    return true;
+  }
+  n = plat_proc_names(all, PS5H_MAX_PROCS);
+  if (n >= 0 && n < PS5H_MAX_PROCS) {
+    found = false;
+    for (int i = 0; i < n && !found; i++) {
+      found = !strncmp(all[i], "eboot.bin", sizeof(plat_name));
+    }
+  }
+  free(all);
+  return found;
 }
 
 static bool alive(pid_t pid) { return kill(pid, 0) == 0 || errno != ESRCH; }

@@ -191,18 +191,17 @@ the same one its web page uses). It talks to it only when asked, never in the ba
   inside `.elf` (19 characters ending in `.`, `.e` or `.el`) counts as without it. If the same payload is
   running several times, `stop` ends the first process found.
 - `protected` is true for anything whose slot, id, file name, name or process name contains `kstuff`, `etahen`,
-  `elfldr`, `pldmgr`, `ps5-hass`, `cheat` or `ps5debug` (case-insensitive; since v0.4.1 also cheat payloads such as
-  CheatRunner and ps5debug). Such a payload is listed but never started or stopped (`403 protected`; the Payload
-  Manager is not even asked), so the payload cannot switch off kstuff, the loader, the Payload Manager or itself,
-  and never touches a payload that is attached to a running game.
-- Start and stop are refused with `409 app_running` (message "close the running game or app first") while an app or
-  game runs (since v0.4.1). Stopping or starting a payload during a game hung a console. The check comes after
-  `not_on` and `protected`, before any request to the Payload Manager (none is made). The check uses the same
-  "running app" as `/state.app`: the console reporting no app (or a failed read of it) counts as none, and only a
-  running app whose title id cannot be looked up counts as running. **A game minimised with
-  `POST /apps/running/suspend` counts as no app running**, because the console then reports none, so payloads can be
-  started and stopped while that game is still in memory. Close the game first; CheatRunner and ps5debug stay
-  protected either way.
+  `elfldr`, `pldmgr`, `ps5-hass` or `ps5debug` (case-insensitive; ps5debug since v0.4.1). Such a payload is listed
+  but never started or stopped (`403 protected`; the Payload Manager is not even asked), so the payload cannot
+  switch off kstuff, the loader, the Payload Manager or itself. CheatRunner was protected in v0.4.1 and is
+  controllable again since v0.4.2, under the game rule below.
+- Start and stop are refused with `409 app_running` (message "close the running game or app first") while a game or
+  app runs or is still in memory, e.g. minimised (since v0.4.2; the running-app check alone since v0.4.1).
+  Stopping or starting a payload during a game hung a console, because CheatRunner attaches to the game. The check
+  comes after `not_on` and `protected`, before any request to the Payload Manager (none is made). A game counts when
+  the console reports a running app (or the read of it fails), or when a process named `eboot.bin` exists (a
+  minimised game is reported as no app but stays in memory as `eboot.bin`), or when the process list cannot be
+  read. Close the game first; with none in memory, CheatRunner can be started and stopped like any payload.
 - The Payload Manager must answer within 2 s in total (for start and stop the list lookup and the action together)
   with at most 256 KB of JSON; anything else counts as not reachable. `capabilities.payload_control` in `/info` is true when the last such call worked (false until the
   first one).

@@ -664,16 +664,30 @@ static void test_payloads_refused_while_app_runs(void) {
   T_EQ_INT(call("POST", "/api/v1/payloads/start", "{\"slot\":\"repo/ftpsrv@e8cce5d1\"}"), 409);
   T_ASSERT(strstr(body, "\"error\":\"app_running\""));
   /* protected is still answered first */
-  T_EQ_INT(call("POST", "/api/v1/payloads/stop", "{\"slot\":\"repo/CheatRunner@22222222\"}"), 403);
+  T_EQ_INT(call("POST", "/api/v1/payloads/stop", "{\"slot\":\"repo/kstuff@44444444\"}"), 403);
   T_ASSERT(strstr(body, "\"error\":\"protected\""));
+  /* CheatRunner is no longer protected: the game rule answers */
+  T_EQ_INT(call("POST", "/api/v1/payloads/stop", "{\"slot\":\"repo/CheatRunner@22222222\"}"), 409);
+  T_ASSERT(strstr(body, "\"error\":\"app_running\""));
   T_EQ_INT(call("POST", "/api/v1/payloads/stop", "{\"slot\":\"repo/ps5debug-ng@12121212\"}"), 403);
   /* a read error fails safe */
   fake.running.app_id = 0;
   fake.running_rc = -5;
   T_EQ_INT(call("POST", "/api/v1/payloads/start", "{\"slot\":\"repo/ftpsrv@e8cce5d1\"}"), 409);
   T_ASSERT(strstr(body, "\"error\":\"app_running\""));
-  /* no app: the usual answer (the manager is not there) */
+  /* a minimised game: no running app, but eboot.bin is in memory */
   fake.running_rc = 0;
+  strcpy(fake.procs[0], "eboot.bin");
+  fake.n_procs = 1;
+  T_EQ_INT(call("POST", "/api/v1/payloads/start", "{\"slot\":\"repo/ftpsrv@e8cce5d1\"}"), 409);
+  T_ASSERT(strstr(body, "\"error\":\"app_running\""));
+  /* an unreadable process list fails safe too */
+  fake.n_procs = 0;
+  fake.procs_rc = -1;
+  T_EQ_INT(call("POST", "/api/v1/payloads/stop", "{\"slot\":\"repo/ftpsrv@e8cce5d1\"}"), 409);
+  T_ASSERT(strstr(body, "\"error\":\"app_running\""));
+  /* nothing in memory: the usual answer (the manager is not there) */
+  fake.procs_rc = 0;
   T_EQ_INT(call("POST", "/api/v1/payloads/stop", "{\"slot\":\"repo/ftpsrv@e8cce5d1\"}"), 503);
   /* outside "on" the console is not asked at all */
   fake.running.app_id = 7;
