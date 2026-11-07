@@ -53,6 +53,8 @@ struct fake_state {
   int focused_app_id;
   int focused_app_rc;
   int focused_app_calls;
+  int focus_block_s; /* a call that blocks: both clocks advance by this */
+  int running_block_s; /* same, for plat_running_app */
   int suspend_rc;
   int suspend_calls;
   int suspended_app_id; /* last app id passed to plat_suspend_app */

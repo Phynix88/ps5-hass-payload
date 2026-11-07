@@ -490,7 +490,7 @@ def test_playtime_broken_file_set_aside(tmp_path):
         assert status == 200
         validate("playtime", doc)
         assert doc["titles"] == []
-        assert (tmp_path / "data" / "ps5-hass" / "playtime.json.bad").exists()
+        assert list((tmp_path / "data" / "ps5-hass").glob("playtime.json.bad-*"))
         info = c.get("/api/v1/info")[1]
         validate("info", info)
         assert "playtime" in (info["last_error"] or "")

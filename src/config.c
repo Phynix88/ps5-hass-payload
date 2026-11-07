@@ -75,7 +75,9 @@ static int path_in_data(const char *name, char *out, size_t cap) {
 }
 
 /* Whole regular file (no symlink) up to max bytes; malloc'd, NUL-terminated.
- * errno ENOENT when missing. */
+ * NULL with errno: ENOENT missing; EINVAL too large or not a regular file;
+ * ELOOP a symlink; ENOMEM, EIO or what open() said (EMFILE, EACCES, ...) for
+ * a failure that says nothing about the file's content. */
 char *config_read_small(const char *path, size_t max, size_t *len) {
   struct stat st;
   char *buf;
@@ -84,10 +86,19 @@ char *config_read_small(const char *path, size_t max, size_t *len) {
   if (fd < 0) {
     return NULL;
   }
-  if (fstat(fd, &st) || !S_ISREG(st.st_mode) || (size_t)st.st_size > max ||
-      !(buf = malloc((size_t)st.st_size + 1))) {
+  if (fstat(fd, &st)) {
+    close(fd);
+    errno = EIO;
+    return NULL;
+  }
+  if (!S_ISREG(st.st_mode) || (size_t)st.st_size > max) {
     close(fd);
     errno = EINVAL;
+    return NULL;
+  }
+  if (!(buf = malloc((size_t)st.st_size + 1))) {
+    close(fd);
+    errno = ENOMEM;
     return NULL;
   }
   n = read(fd, buf, (size_t)st.st_size);

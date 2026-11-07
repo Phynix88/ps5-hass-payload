@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "config.h"
 #include "limits.h"
@@ -16,6 +17,7 @@
 #define MAX_DUR_S (31 * DAY_S)      /* one session longer than this is bogus */
 #define MAX_TOTAL_S 10000000000LL   /* about 300 years */
 #define MAX_WALL_S 4102444800LL     /* 2100-01-01 */
+#define LOAD_NO_MEMORY (-2) /* not a verdict on the file */
 /* title: key + object + 2 keys + 2 values; session: array + 4 values */
 #define MAX_TOKENS \
   ((PS5H_PLAYTIME_MAX_SESSIONS + 16) * 5 + (PS5H_PLAYTIME_MAX_TITLES + 16) * 6 + 16)
@@ -50,7 +52,20 @@ static struct {
   int64_t dirty_ms; /* when it became dirty: the checkpoint timer */
   bool have_poll;
   int64_t last_poll_ms;
+  /* The file exists but could not be read: nothing is written until a load
+   * worked, or the history in it would be overwritten. */
+  bool blocked;
 } st;
+
+static bool test_fail_alloc;
+
+/* Titles and finished sessions only; the running session stays. */
+static void reset_data(void) {
+  free(st.sess);
+  st.sess = NULL;
+  st.n_sess = st.cap_sess = 0;
+  st.n_titles = 0;
+}
 
 static void reset(void) {
   free(st.sess);
@@ -75,6 +90,12 @@ static title_rec *find_title(const char *id) {
     }
   }
   return NULL;
+}
+
+/* Kind of a title for display and saving: the running session may know it
+ * better than the stored record. */
+static bool title_is_game(const title_rec *t) {
+  return t->game || (st.cur.active && !strcmp(st.cur.id, t->id) && st.cur.game);
 }
 
 static void drop_sessions_of(const char *id) {
@@ -106,7 +127,7 @@ static title_rec *get_title(const char *id, bool game) {
     memset(t, 0, sizeof(*t));
     snprintf(t->id, sizeof(t->id), "%s", id);
   }
-  t->game = game;
+  t->game = t->game || game; /* once a game, always a game */
   return t;
 }
 
@@ -209,9 +230,10 @@ static void load_titles(const jr_t *r, int t) {
   }
 }
 
-static void load_sessions(const jr_t *r, int t) {
+/* false = out of memory half way (the history would be incomplete). */
+static bool load_sessions(const jr_t *r, int t) {
   if (t < 0 || r->tok[t].type != JSMN_ARRAY) {
-    return;
+    return true;
   }
   for (int e = t + 1; e < r->ntok && r->tok[e].start < r->tok[t].end; e++) {
     char id[16], kind[8];
@@ -240,18 +262,19 @@ static void load_sessions(const jr_t *r, int t) {
     }
     rec->sum += dur;
     if (!push_session(id, game, start, dur)) {
-      return;
+      return false;
     }
   }
+  return true;
 }
 
 int playtime_load_buf(const char *buf, size_t len, int64_t now_wall_s) {
   jsmntok_t *tok;
   jr_t r;
   int64_t v;
-  reset();
-  if (!(tok = malloc(sizeof(*tok) * MAX_TOKENS))) {
-    return -1;
+  reset_data();
+  if (test_fail_alloc || !(tok = malloc(sizeof(*tok) * MAX_TOKENS))) {
+    return LOAD_NO_MEMORY;
   }
   if (jr_parse(&r, buf, len, tok, MAX_TOKENS) || tok[0].type != JSMN_OBJECT ||
       !jr_int(&r, jr_get(&r, 0, "schema"), &v) || v != 1) {
@@ -259,7 +282,11 @@ int playtime_load_buf(const char *buf, size_t len, int64_t now_wall_s) {
     return -1;
   }
   load_titles(&r, jr_get(&r, 0, "titles"));
-  load_sessions(&r, jr_get(&r, 0, "sessions"));
+  if (!load_sessions(&r, jr_get(&r, 0, "sessions"))) {
+    free(tok);
+    reset_data();
+    return LOAD_NO_MEMORY;
+  }
   free(tok);
   /* a total that is lower than its own sessions is repaired */
   for (int i = 0; i < st.n_titles; i++) {
@@ -280,33 +307,115 @@ static int data_path(char *out, size_t cap) {
   return (size_t)snprintf(out, cap, "%s/playtime.json", dir) >= cap ? -1 : 0;
 }
 
+/* A file with a real format problem goes to playtime.json.bad-<time> (a name
+ * of its own, so a second event cannot destroy the first). */
 static void set_aside(const char *path, const char *why) {
-  char bad[720];
-  snprintf(bad, sizeof(bad), "%s.bad", path);
-  rename(path, bad);
-  reset();
-  log_error("playtime: %s; moved to playtime.json.bad, counting starts again", why);
+  char bad[780];
+  long long t = (long long)plat_wall_s();
+  reset_data();
+  for (int n = 0; n < 100; n++) {
+    if (n) {
+      snprintf(bad, sizeof(bad), "%s.bad-%lld-%d", path, t, n);
+    } else {
+      snprintf(bad, sizeof(bad), "%s.bad-%lld", path, t);
+    }
+    if (access(bad, F_OK)) {
+      break;
+    }
+  }
+  if (rename(path, bad)) {
+    log_error("playtime: %s, and it could not be moved away", why);
+    return;
+  }
+  log_error("playtime: %s; moved aside (playtime.json.bad-*), counting starts again", why);
+}
+
+/* Data replaced by the file's. 0 = loaded (or no file), 1 = the file was not
+ * usable and has been set aside, -1 = it could not be read or allocated: the
+ * file is untouched and says nothing about its content. */
+static int load_file(const char *path) {
+  char *buf;
+  size_t len;
+  int rc;
+  reset_data();
+  if (!(buf = config_read_small(path, PS5H_PLAYTIME_MAX_FILE, &len))) {
+    int e = errno;
+    if (e == ENOENT) {
+      return 0;
+    }
+    if (e == EINVAL || e == ELOOP) { /* too large, not a regular file */
+      set_aside(path, "file is too large or not a regular file");
+      return 1;
+    }
+    log_error("playtime: could not load the file (errno %d), it is kept", e);
+    return -1;
+  }
+  rc = playtime_load_buf(buf, len, plat_wall_s());
+  free(buf);
+  if (rc == LOAD_NO_MEMORY) {
+    log_error("playtime: could not load the file (out of memory), it is kept");
+    return -1;
+  }
+  if (rc) {
+    set_aside(path, "file is not valid");
+    return 1;
+  }
+  return 0;
 }
 
 int playtime_load(void) {
   char path[700];
-  char *buf;
-  size_t len;
   reset();
   if (data_path(path, sizeof(path))) {
     return -1;
   }
-  if (!(buf = config_read_small(path, PS5H_PLAYTIME_MAX_FILE, &len))) {
-    if (errno != ENOENT) {
-      set_aside(path, "file unreadable or too large");
-    }
-    return 0;
-  }
-  if (playtime_load_buf(buf, len, plat_wall_s())) {
-    set_aside(path, "file is not valid");
-  }
-  free(buf);
+  /* on -1 nothing is written until a later load worked (try_recover) */
+  st.blocked = load_file(path) < 0;
   return 0;
+}
+
+/* After a failed load: read the file again; when that works, what was
+ * counted since then is added to what the file holds. */
+static bool try_recover(void) {
+  char path[700];
+  title_rec *mt;
+  sess_rec *ms = st.sess;
+  int mn = st.n_titles, mns = st.n_sess, mcap = st.cap_sess;
+
+  if (data_path(path, sizeof(path))) {
+    return false;
+  }
+  if (!(mt = malloc((size_t)(mn ? mn : 1) * sizeof(*mt)))) {
+    return false;
+  }
+  memcpy(mt, st.titles, (size_t)mn * sizeof(*mt));
+  st.sess = NULL; /* detached: load_file replaces the data */
+  st.n_sess = st.cap_sess = 0;
+  if (load_file(path) < 0) {
+    free(st.sess);
+    memcpy(st.titles, mt, (size_t)mn * sizeof(*mt));
+    st.n_titles = mn;
+    st.sess = ms;
+    st.n_sess = mns;
+    st.cap_sess = mcap;
+    free(mt);
+    return false;
+  }
+  for (int i = 0; i < mn; i++) {
+    title_rec *t = get_title(mt[i].id, mt[i].game);
+    t->total_s += mt[i].total_s;
+    if (t->total_s > MAX_TOTAL_S) {
+      t->total_s = MAX_TOTAL_S;
+    }
+  }
+  for (int i = 0; i < mns; i++) {
+    push_session(ms[i].id, ms[i].game, ms[i].start, ms[i].dur);
+  }
+  free(ms);
+  free(mt);
+  st.blocked = false;
+  log_msg("playtime: file read again, history merged");
+  return true;
 }
 
 static void write_title(jw_t *w, const char *id, bool game, int64_t total) {
@@ -321,12 +430,16 @@ static void write_title(jw_t *w, const char *id, bool game, int64_t total) {
 
 /* The running session is saved as a finished one: after a crash it counts up
  * to the last checkpoint. */
-static void save(void) {
+static void save(int64_t now_ms) {
   char path[700];
   jw_t w;
   bool cur_listed = false;
   int64_t cur_s = st.cur.active ? cur_dur_s() : 0;
 
+  if (st.blocked && !try_recover()) {
+    st.dirty_ms = now_ms; /* the file is not overwritten; try again later */
+    return;
+  }
   prune(plat_wall_s());
   if (data_path(path, sizeof(path))) {
     log_error("playtime: data folder not usable");
@@ -342,7 +455,7 @@ static void save(void) {
   for (int i = 0; i < st.n_titles; i++) {
     const title_rec *t = &st.titles[i];
     bool is_cur = cur_s > 0 && !strcmp(t->id, st.cur.id);
-    write_title(&w, t->id, is_cur ? st.cur.game : t->game,
+    write_title(&w, t->id, title_is_game(t),
                 t->total_s + (is_cur ? cur_s : 0));
     cur_listed |= is_cur;
   }
@@ -381,23 +494,27 @@ static void save(void) {
 
 void playtime_flush(void) {
   if (st.dirty) {
-    save();
+    save(plat_mono_ms());
   }
 }
 
 static void maybe_save(int64_t now_ms) {
   if (st.dirty && now_ms - st.dirty_ms >= PS5H_PLAYTIME_SAVE_S * 1000) {
-    save();
+    save(now_ms);
   }
 }
 
 /* --- counting ------------------------------------------------------------ */
 
+/* now_ms only paces the polling and the checkpoint timer. Console calls can
+ * block for a long time (about 35 s after waking), so the clocks for the
+ * session are read after them, both at the same instant: a block then never
+ * looks like a wall clock jump. */
 void playtime_tick(const app_list *apps, int64_t now_ms) {
   plat_running run;
   bool counts = false, game = false;
   int rc;
-  int64_t wall, dm;
+  int64_t wall, mono, dm;
 
   if (!power_is_on()) {
     /* rest mode or changing state: no console call; the session ends at the
@@ -415,7 +532,10 @@ void playtime_tick(const app_list *apps, int64_t now_ms) {
   st.last_poll_ms = now_ms;
 
   if ((rc = plat_running_app(&run)) < 0) {
-    maybe_save(now_ms); /* no reading: neither counts nor closes */
+    /* no reading: the session ends at the last good sample, the unknown time
+     * is not bridged */
+    close_cur(now_ms);
+    maybe_save(now_ms);
     return;
   }
   if (rc == 1 && apps_valid_id(run.title_id)) {
@@ -424,6 +544,7 @@ void playtime_tick(const app_list *apps, int64_t now_ms) {
     } else {
       int focus = 0;
       if (plat_focused_app(&focus) < 0) {
+        close_cur(now_ms);
         maybe_save(now_ms);
         return;
       }
@@ -432,12 +553,14 @@ void playtime_tick(const app_list *apps, int64_t now_ms) {
   }
   if (counts) {
     const app_t *a = apps ? apps_find(apps, run.title_id) : NULL;
-    game = a && a->game;
+    const title_rec *t = find_title(run.title_id);
+    game = (a && a->game) || (t && t->game); /* never back from game to app */
   }
+  mono = plat_mono_ms();
   wall = plat_wall_s();
 
   if (st.cur.active) {
-    dm = now_ms - st.cur.last_mono_ms;
+    dm = mono - st.cur.last_mono_ms;
     if (!counts || strcmp(st.cur.id, run.title_id) || st.cur.app_id != run.app_id ||
         dm < 0 || dm > PS5H_PLAYTIME_GAP_S * 1000 ||
         llabs((wall - st.cur.last_wall_s) * 1000 - dm) > PS5H_WAKE_JUMP_S * 1000) {
@@ -445,7 +568,7 @@ void playtime_tick(const app_list *apps, int64_t now_ms) {
       close_cur(now_ms);
     } else {
       st.cur.dur_ms += dm;
-      st.cur.last_mono_ms = now_ms;
+      st.cur.last_mono_ms = mono;
       st.cur.last_wall_s = wall;
       st.cur.game = st.cur.game || game; /* the list may have caught up */
       mark_dirty(now_ms);
@@ -458,7 +581,7 @@ void playtime_tick(const app_list *apps, int64_t now_ms) {
     st.cur.game = game;
     st.cur.start_wall = wall;
     st.cur.dur_ms = 0;
-    st.cur.last_mono_ms = now_ms;
+    st.cur.last_mono_ms = mono;
     st.cur.last_wall_s = wall;
     mark_dirty(now_ms);
   }
@@ -511,7 +634,8 @@ void playtime_json(jw_t *w, const app_list *apps, int64_t since_wall_s) {
   for (int i = 0; i < st.n_titles; i++) {
     const title_rec *t = &st.titles[i];
     bool is_cur = st.cur.active && !strcmp(t->id, st.cur.id);
-    write_title_out(w, apps, t->id, t->game, t->total_s + (is_cur ? cur_s : 0));
+    write_title_out(w, apps, t->id, title_is_game(t),
+                    t->total_s + (is_cur ? cur_s : 0));
     cur_listed |= is_cur;
   }
   if (st.cur.active && !cur_listed) {
@@ -545,3 +669,5 @@ int64_t playtime_total_s(const char *title_id) {
 }
 
 int playtime_session_count(void) { return st.n_sess; }
+
+void playtime_test_fail_alloc(bool fail) { test_fail_alloc = fail; }

@@ -139,14 +139,17 @@ console, so the count survives restarts of the payload and has no gaps while Hom
 - `foreground` is `capabilities.focus`. A session counts only while the console is `on`, the title runs **and** has
   the focus (home screen and settings do not count; the control centre keeps the game's focus and does count; a
   minimised game does not run any more). Without `capabilities.focus` the payload cannot tell and counts "title open".
-- The payload samples every 5 s. A session ends when another title (or none) is in front, when the console leaves
-  `on`, after more than 30 s without a sample, or when the wall clock jumps against the monotonic clock (NTP, waking
-  up): it ends at the last sample and a new one starts, so a duration is never negative or inflated. Durations come
-  from the monotonic clock.
+- The payload samples every 5 s. A session ends at its last good sample when another title (or none) is in front,
+  when a read from the console fails, when the console leaves `on`, after more than 30 s without a sample, or when
+  the wall clock jumps against the monotonic one (NTP, waking up). A new one starts at the next good sample, so a
+  duration is never negative or inflated. Durations come from the monotonic clock; a console call that blocks for a
+  while (as after waking) does not count as a clock jump. A title once recorded as `game` stays a `game`.
 - The running session is saved at least every 60 s and when the payload stops; after a crash at most a minute is
   lost. Sessions older than 400 days are folded into `total_s`; at most 20000 sessions and 2048 titles are kept (the
-  oldest sessions go first, totals stay). A broken or oversized `playtime.json` is renamed to `playtime.json.bad`,
-  `last_error` says so, and counting starts again.
+  oldest sessions go first, totals stay). A file in a wrong format or too large is renamed to
+  `playtime.json.bad-<unix time>` (a second one never replaces the first), `last_error` says so, and counting starts
+  again. A file that merely cannot be read right now (out of memory, no file handle) is left alone: nothing is written
+  until a later attempt reads it, and what was counted meanwhile is added to it then.
 
 ### Fan threshold (since v0.2)
 

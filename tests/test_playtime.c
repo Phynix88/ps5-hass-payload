@@ -2,6 +2,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later */
 #include "t.h"
 
+#include <dirent.h>
+
 #include "apps.h"
 #include "config.h"
 #include "limits.h"
@@ -33,6 +35,23 @@ static void setup(void) {
   snprintf(items[2].title_id, 10, "%s", MEDIA);
   power_init();
   playtime_load();
+}
+
+/* Files "playtime.json.bad*" in the data folder. */
+static int count_bad(void) {
+  char dir[700];
+  int n = 0;
+  struct dirent *e;
+  DIR *d;
+  snprintf(dir, sizeof(dir), "%s/data/ps5-hass", fake.root);
+  if (!(d = opendir(dir))) {
+    return 0;
+  }
+  while ((e = readdir(d))) {
+    n += !strncmp(e->d_name, "playtime.json.bad", 17);
+  }
+  closedir(d);
+  return n;
 }
 
 static void run(const char *title_id, int app_id) {
@@ -152,16 +171,16 @@ static void test_gap_closes_session_at_last_sample(void) {
 }
 
 static void test_wall_jump_back_closes_session(void) {
-  char *p;
-  int64_t before;
+  char *p, want[128];
+  int64_t restart;
   setup();
   run(GAME, 100);
   fake.focused_app_id = 100;
   tick_now();
   pass(20);
-  before = fake.wall_s;
   fake.wall_s -= 3600;
   pass(5);
+  restart = fake.wall_s; /* the new session starts at this sample */
   T_EQ_INT(playtime_session_count(), 1);
   T_EQ_INT(playtime_total_s(GAME), 20); /* never negative */
   pass(15);
@@ -170,7 +189,11 @@ static void test_wall_jump_back_closes_session(void) {
   p = strstr(js, "\"current\":{");
   T_ASSERT(p);
   T_ASSERT(!strstr(p, "-"));
-  T_ASSERT(before > fake.wall_s);
+  snprintf(want, sizeof(want),
+           "\"current\":{\"title_id\":\"" GAME "\",\"kind\":\"game\",\"start\":%lld,"
+           "\"duration_s\":15}",
+           (long long)restart);
+  T_ASSERT(strstr(js, want)); /* the new start is the new wall time */
 }
 
 static void test_wall_jump_forward_closes_session(void) {
@@ -318,12 +341,10 @@ static void test_max_sessions_drops_oldest(void) {
 }
 
 static void test_corrupt_file_set_aside(void) {
-  char bad[800];
   setup();
   T_ASSERT(!t_write_str(path, "{\"schema\":1,\"titles\":{\"PPSA"));
   T_EQ_INT(playtime_load(), 0); /* never fails the start */
-  snprintf(bad, sizeof(bad), "%s.bad", path);
-  T_ASSERT(t_read(bad) != NULL);
+  T_EQ_INT(count_bad(), 1);
   T_ASSERT(t_read(path) == NULL);
   T_ASSERT(log_last_error() && strstr(log_last_error(), "playtime"));
   T_EQ_INT(playtime_session_count(), 0);
@@ -337,24 +358,20 @@ static void test_corrupt_file_set_aside(void) {
 
 static void test_huge_file_set_aside(void) {
   static char big[PS5H_PLAYTIME_MAX_FILE + 1024];
-  char bad[800];
   setup();
   memset(big, ' ', sizeof(big));
   memcpy(big, "{\"schema\":1}", 12);
   T_ASSERT(!t_write(path, big, sizeof(big)));
   T_EQ_INT(playtime_load(), 0);
-  snprintf(bad, sizeof(bad), "%s.bad", path);
-  T_ASSERT(t_read(bad) != NULL);
+  T_EQ_INT(count_bad(), 1);
   T_EQ_INT(playtime_session_count(), 0);
 }
 
 static void test_wrong_schema_and_bad_entries(void) {
-  char bad[800];
   setup();
   T_ASSERT(!t_write_str(path, "{\"schema\":2,\"titles\":{},\"sessions\":[]}"));
   playtime_load();
-  snprintf(bad, sizeof(bad), "%s.bad", path);
-  T_ASSERT(t_read(bad) != NULL);
+  T_EQ_INT(count_bad(), 1);
   /* bad entries are dropped one by one, the rest stays */
   T_ASSERT(!t_write_str(path,
       "{\"schema\":1,\"titles\":{\"" GAME "\":{\"kind\":\"game\",\"total_s\":9},"
@@ -408,18 +425,158 @@ static void test_samples_every_5s_only(void) {
   T_EQ_INT(fake.focused_app_calls, 2);
 }
 
-static void test_read_error_skips_sample(void) {
+static void test_read_error_closes_session(void) {
   setup();
   run(GAME, 100);
   fake.focused_app_id = 100;
   tick_now();
   pass(10);
-  fake.focused_app_rc = -1; /* a failed read neither counts nor closes */
+  fake.focused_app_rc = -1; /* closes at the last good sample, no bridging */
   pass(10);
+  T_EQ_INT(playtime_session_count(), 1);
+  T_EQ_INT(playtime_total_s(GAME), 10);
   fake.focused_app_rc = 0;
+  pass(5); /* a new session opens */
+  pass(10);
+  T_EQ_INT(playtime_total_s(GAME), 20);
+  T_EQ_INT(playtime_session_count(), 1);
+}
+
+/* A console call that blocks (Sony calls do, for ~35 s after waking): both
+ * clocks run on during it. The wall/monotonic check must not take that for a
+ * clock jump. */
+static void test_blocking_call_does_not_split_session(void) {
+  setup();
+  run(GAME, 100);
+  fake.focused_app_id = 100;
+  tick_now();
+  pass(10);
+  fake.focus_block_s = 10;
+  pass(5); /* this sample took 10 s inside the console call */
+  fake.focus_block_s = 0;
   pass(5);
-  T_EQ_INT(playtime_session_count(), 0);
-  T_EQ_INT(playtime_total_s(GAME), 25);
+  T_EQ_INT(playtime_session_count(), 0); /* one session, not split */
+  T_EQ_INT(playtime_total_s(GAME), 10 + 15 + 5);
+}
+
+static void test_block_right_after_turning_on_loses_no_session(void) {
+  setup();
+  run(GAME, 100);
+  fake.focused_app_id = 100;
+  tick_now();
+  pass(10);
+  fake.power_state = 500;
+  pass(10);
+  T_EQ_INT(playtime_session_count(), 1);
+  fake.power_state = 1000;
+  fake.running_block_s = 35; /* the first call after waking */
+  power_tick(fake.mono_ms);
+  playtime_tick(&list, fake.mono_ms);
+  fake.running_block_s = 0;
+  pass(10);
+  /* the new session starts after the block: 10 s, no 0 s session dropped */
+  T_EQ_INT(playtime_session_count(), 1);
+  T_EQ_INT(playtime_total_s(GAME), 10 + 10);
+}
+
+static void test_kind_never_flips_from_game_to_app(void) {
+  setup();
+  run(GAME, 100);
+  fake.focused_app_id = 100;
+  tick_now();
+  pass(10);
+  run(NULL, 0);
+  pass(5);
+  items[0].game = false; /* the list no longer says so (rescan, odd data) */
+  run(GAME, 101);
+  fake.focused_app_id = 101;
+  pass(5);
+  pass(10);
+  json_of(js, sizeof(js), 0);
+  T_ASSERT(strstr(js, "\"title_id\":\"" GAME "\",\"name\":\"Test Game\",\"kind\":\"game\",\"total_s\":20"));
+  T_ASSERT(strstr(js, "\"current\":{\"title_id\":\"" GAME "\",\"kind\":\"game\""));
+  playtime_flush();
+  T_ASSERT(strstr(t_read(path), "\"" GAME "\":{\"kind\":\"game\""));
+  run(NULL, 0);
+  pass(5);
+  json_of(js, sizeof(js), 0);
+  T_ASSERT(!strstr(js, "\"kind\":\"app\""));
+}
+
+static void test_second_bad_file_keeps_the_first(void) {
+  setup();
+  T_ASSERT(!t_write_str(path, "{\"schema\":1,\"titles\":{\"PPSA"));
+  playtime_load();
+  T_EQ_INT(count_bad(), 1);
+  T_ASSERT(!t_write_str(path, "not json at all"));
+  playtime_load(); /* same second: still a new name */
+  T_EQ_INT(count_bad(), 2);
+  fake.wall_s += 100;
+  T_ASSERT(!t_write_str(path, "[1]"));
+  playtime_load();
+  T_EQ_INT(count_bad(), 3);
+}
+
+static const char GOOD_FILE_FMT[] =
+    "{\"schema\":1,\"titles\":{\"" GAME "\":{\"kind\":\"game\",\"total_s\":50}},"
+    "\"sessions\":[[\"" GAME "\",\"game\",%lld,50]]}";
+
+/* The file is fine but could not be read or allocated: the history must
+ * survive, nothing is written until a load worked, then old and new merge. */
+static void check_history_survives(char *good, void (*heal)(void)) {
+  int64_t counted;
+  T_EQ_INT(count_bad(), 0);
+  {
+    struct stat sb;
+    T_ASSERT(!stat(path, &sb)); /* still where it was */
+  }
+  T_ASSERT(log_last_error() && strstr(log_last_error(), "could not load"));
+  run(GAME2, 100);
+  fake.focused_app_id = 100;
+  tick_now();
+  pass(PS5H_PLAYTIME_SAVE_S + 30); /* several checkpoint attempts */
+  run(NULL, 0);
+  pass(5);
+  counted = playtime_total_s(GAME2);
+  T_ASSERT(counted >= PS5H_PLAYTIME_SAVE_S);
+  pass(PS5H_PLAYTIME_SAVE_S + 5); /* still blocked: file untouched */
+  heal();
+  T_EQ_STR(t_read(path), good);
+  pass(PS5H_PLAYTIME_SAVE_S + 5); /* this checkpoint recovers and merges */
+  T_EQ_INT(count_bad(), 0);
+  T_EQ_INT(playtime_total_s(GAME), 50);
+  T_EQ_INT(playtime_total_s(GAME2), counted);
+  T_EQ_INT(playtime_session_count(), 2);
+  playtime_load(); /* what is on disk now has both */
+  T_EQ_INT(playtime_total_s(GAME), 50);
+  T_EQ_INT(playtime_total_s(GAME2), counted);
+}
+
+static void heal_alloc(void) { playtime_test_fail_alloc(false); }
+
+static void test_alloc_failure_keeps_file_and_merges_later(void) {
+  static char good[400];
+  setup();
+  snprintf(good, sizeof(good), GOOD_FILE_FMT, (long long)(fake.wall_s - 1000));
+  T_ASSERT(!t_write_str(path, good));
+  playtime_test_fail_alloc(true);
+  T_EQ_INT(playtime_load(), 0);
+  check_history_survives(good, heal_alloc);
+}
+
+static void heal_perm(void) { chmod(path, 0600); }
+
+static void test_unreadable_file_keeps_file_and_merges_later(void) {
+  static char good[400];
+  setup();
+  if (geteuid() == 0) {
+    return; /* root reads anything */
+  }
+  snprintf(good, sizeof(good), GOOD_FILE_FMT, (long long)(fake.wall_s - 1000));
+  T_ASSERT(!t_write_str(path, good));
+  T_ASSERT(!chmod(path, 0));
+  T_EQ_INT(playtime_load(), 0);
+  check_history_survives(good, heal_perm);
 }
 
 int main(void) {
@@ -441,6 +598,12 @@ int main(void) {
   T_RUN(test_no_focus_capability_counts_open_game);
   T_RUN(test_unknown_title_is_an_app);
   T_RUN(test_samples_every_5s_only);
-  T_RUN(test_read_error_skips_sample);
+  T_RUN(test_read_error_closes_session);
+  T_RUN(test_blocking_call_does_not_split_session);
+  T_RUN(test_block_right_after_turning_on_loses_no_session);
+  T_RUN(test_kind_never_flips_from_game_to_app);
+  T_RUN(test_second_bad_file_keeps_the_first);
+  T_RUN(test_alloc_failure_keeps_file_and_merges_later);
+  T_RUN(test_unreadable_file_keeps_file_and_merges_later);
   T_MAIN();
 }

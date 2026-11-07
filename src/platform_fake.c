@@ -107,6 +107,8 @@ int plat_notify(const char *ascii) {
 
 int plat_running_app(plat_running *out) {
   fake.reads++;
+  fake.mono_ms += fake.running_block_s * 1000LL;
+  fake.wall_s += fake.running_block_s;
   if (fake.running.app_id <= 0) {
     return 0;
   }
@@ -267,6 +269,8 @@ int plat_focused_app(int *app_id) {
   fake.sony_calls++;
   fake.reads++;
   fake.focused_app_calls++;
+  fake.mono_ms += fake.focus_block_s * 1000LL;
+  fake.wall_s += fake.focus_block_s;
   if (fake.focused_app_rc < 0) {
     return fake.focused_app_rc;
   }
