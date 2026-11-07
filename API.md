@@ -122,7 +122,7 @@ Success answers carry `"result":"ok"`. `<ID>` must match `^[A-Z]{4}[0-9]{5}$`.
   `fan` (the last known values) come from memory or the clock. The fan watcher, the app rescan and keep-awake pause
   too, and continue when the state is `on` again. A console without the function that reports the power state
   counts as `on`. When reading it fails, the last state read stays in force (with none yet: not `on`); after 60 s of
-  failed reads in a row it counts as `on` and `power_state` is `unknown`.
+  failed reads in a row (240 reads; a pause of more than 15 s between two reads, such as the payload being frozen in rest mode, starts the count over) it counts as `on` and `power_state` is `unknown`.
   See [Outside "on"](#outside-on) for what requests do then.
 
 ### Outside "on"

@@ -16,9 +16,12 @@ static struct {
   int state;     /* last good raw value; < 0 = none yet */
   bool ticked;   /* at least one tick ran */
   bool missing;  /* no power state function: counts as "on" */
-  bool fail_open; /* failed for PS5H_POWER_FAIL_OPEN_S: counts as "on" */
+  bool fail_open; /* failed long enough: counts as "on" */
   bool failing;  /* the last read failed */
+  int fail_reads; /* failed reads in the current run */
   int64_t fail_since_ms; /* first failure of the current run */
+  bool read_once; /* last_read_ms is valid */
+  int64_t last_read_ms;
   bool keep_awake;
   bool armed; /* next_ms is valid */
   int64_t next_ms;
@@ -31,11 +34,20 @@ void power_init(void) {
 
 /* A failed read keeps the last good state (none yet = not "on"): treating it
  * as "on" would open the gate exactly while the console may be falling
- * asleep. Only a long run of failures falls back to "on", so a function that
- * breaks for good cannot switch the payload off for good. */
+ * asleep. Only a long run of failed reads falls back to "on", so a function
+ * that breaks for good cannot switch the payload off for good. The run counts
+ * reads, not time: the monotonic clock keeps running in rest mode while the
+ * process is frozen, so a long gap between two reads proves nothing and starts
+ * the run over. */
 static void read_state(int64_t now_ms) {
   int s;
   st.ticked = true;
+  if (st.read_once && now_ms - st.last_read_ms > PS5H_SUSPEND_GAP_S * 1000) {
+    st.failing = st.fail_open = false;
+    st.fail_reads = 0;
+  }
+  st.read_once = true;
+  st.last_read_ms = now_ms;
   st.missing = !plat_capabilities().power_state;
   if (st.missing) {
     st.failing = st.fail_open = false;
@@ -45,10 +57,14 @@ static void read_state(int64_t now_ms) {
   if (s < 0) {
     if (!st.failing) {
       st.failing = true;
+      st.fail_reads = 0;
       st.fail_since_ms = now_ms;
       log_error("power state read failed (%d)", s);
     }
-    if (!st.fail_open &&
+    if (st.fail_reads < PS5H_POWER_FAIL_OPEN_READS + 1) {
+      st.fail_reads++;
+    }
+    if (!st.fail_open && st.fail_reads >= PS5H_POWER_FAIL_OPEN_READS &&
         now_ms - st.fail_since_ms >= PS5H_POWER_FAIL_OPEN_S * 1000) {
       st.fail_open = true;
       log_error("power state unreadable for %d s, counting as on",

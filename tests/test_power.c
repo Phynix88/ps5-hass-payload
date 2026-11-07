@@ -108,6 +108,97 @@ static void test_errors_for_60s_fall_back_to_on(void) {
   T_ASSERT(!power_is_on());
 }
 
+/* The monotonic clock keeps running in rest mode while the process is
+ * frozen: a long gap is no evidence of 60 s of failures. */
+static void test_gap_after_thaw_does_not_open_the_gate(void) {
+  server *s;
+  int before_sony, before_reads;
+  setup();
+  s = server_new(&ctx, 0);
+  T_ASSERT(s != NULL);
+  fake.running = (plat_running){.app_id = 7, .title_id = "PPSA00001"};
+  server_step(s, 0);
+  fake.power_state = 300;
+  fake.mono_ms += 250;
+  server_step(s, 0);
+  T_ASSERT(!power_is_on());
+  fake.power_state_rc = -1; /* the read fails while falling asleep ... */
+  fake.mono_ms += 250;
+  server_step(s, 0);
+  T_ASSERT(!power_is_on());
+  fake.mono_ms += 10 * 60 * 1000; /* ... the process is frozen ... */
+  server_step(s, 0); /* ... and its first read after thawing fails, too */
+  T_ASSERT(!power_is_on());
+  T_EQ_STR(power_state_name(), "going_to_rest");
+  before_sony = fake.sony_calls;
+  before_reads = fake.reads;
+  fake.mono_ms += 250;
+  server_step(s, 0);
+  T_EQ_INT(fake.sony_calls, before_sony);
+  T_EQ_INT(fake.reads, before_reads);
+  server_free(s);
+}
+
+static void test_240_failed_reads_open_the_gate(void) {
+  int64_t t;
+  setup();
+  t = fake.mono_ms;
+  fake.power_state = 500;
+  power_tick(t);
+  fake.power_state_rc = -1;
+  for (int i = 1; i <= PS5H_POWER_FAIL_OPEN_READS; i++) {
+    power_tick(t + i * (int64_t)PS5H_POWER_READ_MS);
+  }
+  T_ASSERT(!power_is_on()); /* 240 reads, but only 59.75 s apart */
+  power_tick(t + (PS5H_POWER_FAIL_OPEN_READS + 1) * (int64_t)PS5H_POWER_READ_MS);
+  T_ASSERT(power_is_on());
+  T_EQ_STR(power_state_name(), "unknown");
+}
+
+static void test_a_gap_restarts_the_failure_run(void) {
+  int64_t t;
+  setup();
+  t = fake.mono_ms;
+  fake.power_state = 500;
+  power_tick(t);
+  fake.power_state_rc = -1;
+  for (int i = 1; i < PS5H_POWER_FAIL_OPEN_READS; i++) { /* 239 reads */
+    power_tick(t + i * (int64_t)PS5H_POWER_READ_MS);
+  }
+  T_ASSERT(!power_is_on());
+  t += (PS5H_POWER_FAIL_OPEN_READS - 1) * (int64_t)PS5H_POWER_READ_MS +
+       (PS5H_SUSPEND_GAP_S + 5) * 1000;
+  for (int i = 0; i < PS5H_POWER_FAIL_OPEN_READS; i++) {
+    power_tick(t + i * (int64_t)PS5H_POWER_READ_MS);
+    T_ASSERT(!power_is_on()); /* a whole new run is needed: 240 more reads */
+  }
+  power_tick(t + PS5H_POWER_FAIL_OPEN_READS * (int64_t)PS5H_POWER_READ_MS);
+  T_ASSERT(power_is_on());
+}
+
+static void test_a_good_read_resets_the_failure_run(void) {
+  int64_t t;
+  setup();
+  t = fake.mono_ms;
+  fake.power_state = 500;
+  power_tick(t);
+  fake.power_state_rc = -1;
+  for (int i = 1; i < PS5H_POWER_FAIL_OPEN_READS; i++) {
+    power_tick(t + i * (int64_t)PS5H_POWER_READ_MS);
+  }
+  fake.power_state_rc = 0;
+  t += PS5H_POWER_FAIL_OPEN_READS * (int64_t)PS5H_POWER_READ_MS;
+  power_tick(t);
+  T_EQ_STR(power_state_name(), "rest");
+  fake.power_state_rc = -1;
+  for (int i = 1; i <= PS5H_POWER_FAIL_OPEN_READS; i++) {
+    power_tick(t + i * (int64_t)PS5H_POWER_READ_MS);
+    T_ASSERT(!power_is_on()); /* counted from zero again */
+  }
+  power_tick(t + (PS5H_POWER_FAIL_OPEN_READS + 1) * (int64_t)PS5H_POWER_READ_MS);
+  T_ASSERT(power_is_on());
+}
+
 static void test_missing_capability_counts_as_on(void) {
   setup();
   fake.power_state = 300;
@@ -291,6 +382,10 @@ int main(void) {
   T_RUN(test_read_error_after_on_stays_on);
   T_RUN(test_read_error_before_any_read_is_not_on);
   T_RUN(test_errors_for_60s_fall_back_to_on);
+  T_RUN(test_gap_after_thaw_does_not_open_the_gate);
+  T_RUN(test_240_failed_reads_open_the_gate);
+  T_RUN(test_a_gap_restarts_the_failure_run);
+  T_RUN(test_a_good_read_resets_the_failure_run);
   T_RUN(test_missing_capability_counts_as_on);
   T_RUN(test_state_is_on_before_first_tick);
   T_RUN(test_keep_awake_ticks_every_240s_only_when_on);
