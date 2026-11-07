@@ -132,7 +132,12 @@ console, so the count survives restarts of the payload and has no gaps while Hom
 
 - `titles`: every title with its total, including the running session. `name` is the title id when the title is not
   installed. `kind` is `game` or `app` (as in `/apps`; a title the payload does not know counts as `app`, so it never
-  adds to game time). `console_total_s` is the console's own count; it is `null` until a later version fills it.
+  adds to game time). `console_total_s` is the console's own count of play time for the title (Sony's `playedTimeOnConsole`, seconds,
+  summed over all console users); it is `null` when unknown: the title is not in Sony's data, has no value there, the
+  console has not been `on` since the payload started, or the file could not be read. Sony's file is copied to
+  `data/ps5-hass/app.db.copy` and read at most once an hour, only while the console is `on`. It is Sony's
+  number, not ours: it can differ from `total_s` (which only counts the foreground since the payload started
+  counting).
 - `sessions`: finished sessions that end at or after `since`; `start` is Unix time (UTC, the console's clock),
   `duration_s` seconds. `current` is the running session (`null` when none), `duration_s` as of the last sample.
   Time zone and day or week limits are the client's business.

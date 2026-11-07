@@ -196,4 +196,4 @@ API: [API.md](API.md). Testing on a console: [TESTING.md](TESTING.md).
 ## License
 
 GPL-3.0-or-later. Third-party code: [jsmn](third_party/jsmn/) (MIT), microdns (LGPL-2.1, built from source,
-see `scripts/build-microdns.sh`).
+see `scripts/build-microdns.sh`), [SQLite](third_party/sqlite/) (public domain, amalgamation, unmodified).

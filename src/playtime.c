@@ -12,6 +12,7 @@
 #include "log.h"
 #include "platform.h"
 #include "power.h"
+#include "sonytime.h"
 
 #define DAY_S 86400
 #define MAX_DUR_S (31 * DAY_S)      /* one session longer than this is bogus */
@@ -607,7 +608,14 @@ static void write_title_out(jw_t *w, const app_list *apps, const char *id,
   jw_key(w, "total_s");
   jw_int(w, total);
   jw_key(w, "console_total_s");
-  jw_null(w); /* the console's own count, filled in a later version */
+  {
+    int64_t console_s = sonytime_of(id); /* Sony's own count, -1 = unknown */
+    if (console_s < 0) {
+      jw_null(w);
+    } else {
+      jw_int(w, console_s);
+    }
+  }
   jw_end_obj(w);
 }
 

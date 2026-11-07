@@ -10,10 +10,17 @@ CC ?= cc
 PYTHON ?= python3
 FUZZ_SECONDS ?= 60
 
+# SQLite is third-party code: its own object, no sanitizers, no -Werror.
+SQLITE_DEFS := -DSQLITE_OMIT_LOAD_EXTENSION -DSQLITE_THREADSAFE=0 \
+               -DSQLITE_DEFAULT_MEMSTATUS=0 -DSQLITE_OMIT_DEPRECATED \
+               -DSQLITE_DQS=0 -DSQLITE_MAX_MMAP_SIZE=0
+SQLITE_OBJ := build/sqlite3.o
+SQLITE_INC := -Ithird_party/sqlite
+
 SAN    := -fsanitize=address,undefined -fno-omit-frame-pointer
 CFLAGS_HOST := -std=c11 -Wall -Wextra -Werror -g $(SAN) \
                -D_DEFAULT_SOURCE -D_DARWIN_C_SOURCE \
-               -Isrc -Ithird_party/jsmn \
+               -Isrc -Ithird_party/jsmn $(SQLITE_INC) \
                -DPS5H_VERSION=\"host\" -DPS5H_COMMIT=\"host\"
 LDLIBS_HOST := -lpthread
 
@@ -26,9 +33,14 @@ TESTS   := $(patsubst tests/%.c,build/tests/%,$(wildcard tests/test_*.c))
 test: $(TESTS)
 	@set -e; for t in $(TESTS); do ASAN_OPTIONS=strict_string_checks=1 $$t; done
 
-build/tests/%: tests/%.c $(SRC_LIB) $(HEADERS)
+$(SQLITE_OBJ): third_party/sqlite/sqlite3.c third_party/sqlite/sqlite3.h
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS_HOST) -o $@ $< $(SRC_LIB) $(LDLIBS_HOST)
+	$(CC) -std=c11 -O1 -w -D_DEFAULT_SOURCE -D_DARWIN_C_SOURCE $(SQLITE_DEFS) \
+	  -c -o $@ third_party/sqlite/sqlite3.c
+
+build/tests/%: tests/%.c $(SRC_LIB) $(SQLITE_OBJ) $(HEADERS)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS_HOST) -o $@ $< $(SRC_LIB) $(SQLITE_OBJ) $(LDLIBS_HOST)
 
 clean:
 	rm -rf build
@@ -36,13 +48,18 @@ clean:
 # --- fuzzing (needs a clang with libFuzzer, e.g. nixpkgs clang on Linux) ---
 FUZZ_CC ?= clang
 FUZZ_FLAGS := -std=c11 -g -O1 -fsanitize=fuzzer,address,undefined \
-              -D_DEFAULT_SOURCE -Isrc -Ithird_party/jsmn \
+              -D_DEFAULT_SOURCE -Isrc -Ithird_party/jsmn $(SQLITE_INC) \
               -DPS5H_VERSION=\"fuzz\" -DPS5H_COMMIT=\"fuzz\"
 FUZZERS := $(patsubst tests/fuzz/%.c,build/fuzz/%,$(wildcard tests/fuzz/fuzz_*.c))
 
-build/fuzz/%: tests/fuzz/%.c $(SRC_LIB) $(HEADERS)
+build/fuzz/sqlite3.o: third_party/sqlite/sqlite3.c third_party/sqlite/sqlite3.h
 	@mkdir -p $(dir $@)
-	$(FUZZ_CC) $(FUZZ_FLAGS) -o $@ $< $(SRC_LIB) -lpthread
+	$(FUZZ_CC) -std=c11 -O1 -w -D_DEFAULT_SOURCE $(SQLITE_DEFS) -c -o $@ \
+	  third_party/sqlite/sqlite3.c
+
+build/fuzz/%: tests/fuzz/%.c $(SRC_LIB) build/fuzz/sqlite3.o $(HEADERS)
+	@mkdir -p $(dir $@)
+	$(FUZZ_CC) $(FUZZ_FLAGS) -o $@ $< $(SRC_LIB) build/fuzz/sqlite3.o -lpthread
 
 fuzz: $(FUZZERS)
 	@set -e; for f in $(FUZZERS); do \
@@ -56,9 +73,9 @@ fuzz: $(FUZZERS)
 # --- host server for end-to-end tests (fake platform, no mDNS) ---
 host: build/ps5-hass-host
 
-build/ps5-hass-host: src/main.c $(SRC_LIB) $(HEADERS)
+build/ps5-hass-host: src/main.c $(SRC_LIB) $(SQLITE_OBJ) $(HEADERS)
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS_HOST) -DPS5H_HOST -o $@ src/main.c $(SRC_LIB) $(LDLIBS_HOST)
+	$(CC) $(CFLAGS_HOST) -DPS5H_HOST -o $@ src/main.c $(SRC_LIB) $(SQLITE_OBJ) $(LDLIBS_HOST)
 
 # --- end-to-end tests (pytest + jsonschema, see tests/e2e/requirements.txt) ---
 e2e: build/ps5-hass-host

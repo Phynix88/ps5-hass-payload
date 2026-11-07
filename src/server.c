@@ -21,6 +21,7 @@
 #include "platform.h"
 #include "playtime.h"
 #include "power.h"
+#include "sonytime.h"
 #include "state.h"
 
 #define IN_CAP (PS5H_MAX_HEADER + PS5H_MAX_BODY + 1)
@@ -221,6 +222,7 @@ static void periodic(server *s, int64_t now) {
   int64_t off;
   power_tick(now); /* first: every other module asks power_is_on() */
   playtime_tick(s->ctx->apps, now);
+  sonytime_refresh(now); /* limits itself to once an hour, only while "on" */
   info_cache_refresh();
   off = clock_offset();
   int64_t gap = now - s->last_step_ms;

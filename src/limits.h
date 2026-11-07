@@ -55,6 +55,9 @@
 #define PS5H_PLAYTIME_MAX_TITLES 2048
 #define PS5H_PLAYTIME_MAX_FILE   (4 * 1024 * 1024) /* larger = set aside */
 #define PS5H_PLAYTIME_DEFAULT_DAYS 8 /* GET /playtime without ?since= */
+#define PS5H_SONYTIME_REFRESH_S  3600 /* app.db is read at most this often */
+#define PS5H_SONYTIME_MAX_COPY   (64 * 1024 * 1024) /* larger app.db = skipped */
+#define PS5H_SONYTIME_MAX_TITLES 4096
 #define PS5H_DATA_DIR            "/data/ps5-hass"
 
 #endif

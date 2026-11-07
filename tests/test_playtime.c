@@ -11,6 +11,8 @@
 #include "platform_fake.h"
 #include "power.h"
 #include "playtime.h"
+#include "sonytime.h"
+#include "sqlite3.h"
 
 #define GAME "PPSA00002"
 #define GAME2 "PPSA00009"
@@ -34,6 +36,7 @@ static void setup(void) {
   items[1].game = true;
   snprintf(items[2].title_id, 10, "%s", MEDIA);
   power_init();
+  sonytime_reset();
   playtime_load();
 }
 
@@ -579,6 +582,38 @@ static void test_unreadable_file_keeps_file_and_merges_later(void) {
   check_history_survives(good, heal_perm);
 }
 
+/* console_total_s is Sony's own count, or null where it is unknown. */
+static void test_console_total_in_json(void) {
+  char db_path[700], dir[700];
+  sqlite3 *db = NULL;
+  setup();
+  run(GAME, 100);
+  fake.focused_app_id = 100;
+  tick_now();
+  pass(60);
+  run(GAME2, 101);
+  fake.focused_app_id = 101;
+  pass(10);
+  json_of(js, sizeof(js), 0);
+  T_ASSERT(strstr(js, "\"console_total_s\":null"));
+  T_ASSERT(!strstr(js, "\"console_total_s\":1"));
+  snprintf(dir, sizeof(dir), "%s/system_data/priv/mms", fake.root);
+  snprintf(db_path, sizeof(db_path), "%s/app.db", dir);
+  t_mkdirs(dir);
+  T_EQ_INT(sqlite3_open(db_path, &db), 0);
+  T_EQ_INT(sqlite3_exec(db,
+                        "CREATE TABLE tbl_iconinfo_1 (titleId TEXT, playedTimeOnConsole INT);"
+                        "INSERT INTO tbl_iconinfo_1 VALUES ('" GAME "', 7200);",
+                        0, 0, NULL),
+           0);
+  sqlite3_close(db);
+  T_EQ_INT(sonytime_refresh(fake.mono_ms), 0);
+  json_of(js, sizeof(js), 0);
+  T_ASSERT(strstr(js, "\"title_id\":\"" GAME "\""));
+  T_ASSERT(strstr(js, "\"console_total_s\":7200"));
+  T_ASSERT(strstr(js, "\"console_total_s\":null")); /* GAME2: not in the file */
+}
+
 int main(void) {
   T_RUN(test_counts_only_foreground);
   T_RUN(test_control_centre_keeps_focus_and_counts);
@@ -605,5 +640,6 @@ int main(void) {
   T_RUN(test_second_bad_file_keeps_the_first);
   T_RUN(test_alloc_failure_keeps_file_and_merges_later);
   T_RUN(test_unreadable_file_keeps_file_and_merges_later);
+  T_RUN(test_console_total_in_json);
   T_MAIN();
 }
