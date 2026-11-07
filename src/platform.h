@@ -99,7 +99,5 @@ int plat_suspend_app(int app_id);
 int plat_keep_awake(void);
 /* 0 = ok and out->ok; otherwise out->ok is false. */
 int plat_soc_power_read(plat_soc_power *out);
-/* Title id ("PPSAnnnnn", 9 characters + NUL) of an app id; 0 = ok. */
-int plat_title_of(int app_id, char title_id[10]);
 
 #endif

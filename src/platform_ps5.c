@@ -94,7 +94,6 @@ static int (*opt_suspend)(int, int);
 static int (*opt_reset_timer)(void);
 static int (*opt_power_tick)(void);
 static int (*opt_soc_power)(void *);
-static int (*opt_app_title)(int, void *);
 
 /* Console functions take buffers of unknown size; give them this much,
  * zeroed and 16-byte aligned, and read only the bytes that are meant. */
@@ -141,8 +140,6 @@ static void resolve(void) {
       sym("libSceSystemService.sprx", "sceShellCoreUtilResetAutoPowerDownTimer");
   opt_power_tick = sym("libSceSystemService.sprx", "sceSystemServicePowerTick");
   opt_soc_power = sym("libkernel_sys.sprx", "sceKernelGetSocPowerConsumption");
-  opt_app_title =
-      sym("libSceSystemService.sprx", "sceSystemServiceGetAppTitleId");
   temps_ok = sceKernelGetCpuTemperature(&t) == 0 && t >= 0 && t <= 130;
   {
     uint8_t buf[FAN_LEN] = {0};
@@ -548,30 +545,6 @@ int plat_soc_power_read(plat_soc_power *out) {
       out->ma[i] = (int)buf[3 * i + 2];
     }
     out->ok = true;
-  }
-  free(buf);
-  return rc;
-}
-
-int plat_title_of(int app_id, char title_id[10]) {
-  char *buf;
-  int rc;
-  pthread_once(&resolve_once, resolve);
-  if (!opt_app_title) {
-    return -1;
-  }
-  buf = aligned_alloc(16, SONY_BUF);
-  if (!buf) {
-    return -1;
-  }
-  memset(buf, 0, SONY_BUF);
-  rc = opt_app_title(app_id, buf);
-  if (rc == 0) {
-    memcpy(title_id, buf, 9);
-    title_id[9] = '\0';
-    if (!title_id[0]) {
-      rc = -1;
-    }
   }
   free(buf);
   return rc;

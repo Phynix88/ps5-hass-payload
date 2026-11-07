@@ -59,7 +59,6 @@ static void test_fake_notify_records(void) {
 
 static void test_new_functions_count_sony_calls(void) {
   int app = 0;
-  char title[10];
   plat_soc_power soc;
   fake_reset();
   fake.power_state = 500;
@@ -68,7 +67,6 @@ static void test_new_functions_count_sony_calls(void) {
   fake.soc_power.mw[0] = 15000;
   fake.soc_power.mv[0] = 900;
   fake.soc_power.ma[0] = 16000;
-  snprintf(fake.title_id, sizeof(fake.title_id), "PPSA00001");
 
   T_EQ_INT(plat_power_state(), 500);
   T_EQ_INT(fake.sony_calls, 0); /* the state read is not a "sony call" */
@@ -82,17 +80,14 @@ static void test_new_functions_count_sony_calls(void) {
   T_EQ_INT(plat_soc_power_read(&soc), 0);
   T_ASSERT(soc.ok);
   T_EQ_INT(soc.mw[0], 15000);
-  T_EQ_INT(plat_title_of(123, title), 0);
-  T_EQ_STR(title, "PPSA00001");
 
-  T_EQ_INT(fake.sony_calls, 5);
+  T_EQ_INT(fake.sony_calls, 4);
   T_EQ_INT(fake.focused_app_calls, 1);
   T_EQ_INT(fake.suspend_calls, 1);
   T_EQ_INT(fake.keep_awake_calls, 1);
   T_EQ_INT(fake.soc_power_calls, 1);
-  T_EQ_INT(fake.title_of_calls, 1);
   T_EQ_INT(plat_power_state(), 500);
-  T_EQ_INT(fake.sony_calls, 5);
+  T_EQ_INT(fake.sony_calls, 4);
 }
 
 static void test_new_functions_report_errors(void) {

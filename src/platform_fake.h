@@ -71,9 +71,6 @@ struct fake_state {
   plat_soc_power soc_power;
   int soc_power_rc;
   int soc_power_calls;
-  char title_id[10]; /* "" = the running app's title id, if the id matches */
-  int title_of_rc;
-  int title_of_calls;
 };
 
 extern struct fake_state fake;

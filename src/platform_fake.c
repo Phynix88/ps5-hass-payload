@@ -334,21 +334,3 @@ int plat_soc_power_read(plat_soc_power *out) {
   *out = fake.soc_power;
   return 0;
 }
-
-int plat_title_of(int app_id, char title_id[10]) {
-  const char *t = fake.title_id;
-  fake.sony_calls++;
-  fake.reads++;
-  fake.title_of_calls++;
-  if (fake.title_of_rc < 0) {
-    return fake.title_of_rc;
-  }
-  if (!t[0] && fake.running.app_id == app_id) {
-    t = fake.running.title_id;
-  }
-  if (!t[0]) {
-    return -1;
-  }
-  snprintf(title_id, 10, "%s", t);
-  return 0;
-}
