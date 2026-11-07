@@ -105,7 +105,7 @@ Success answers carry `"result":"ok"`. `<ID>` must match `^[A-Z]{4}[0-9]{5}$`.
 - `fan` (since v0.2): `{"target_c": …, "current_c": …, "stock_c": …}` – our target (null = the console's own),
   the value the fan driver uses now, and the console's factory value (91 °C on FW 13.60), each null when unknown.
 - `power_state` (since v0.4): `on`, `going_to_rest`, `rest`, `shutting_down` or `unknown` (no reading, or a value
-  that is not known). `keep_awake` (since v0.4): whether `POST /keep_awake` is on.
+  that is not known; a failed read repeats the last state, see below). `keep_awake` (since v0.4): whether `POST /keep_awake` is on.
 - `soc_power` (since v0.4): power drawn by the console's chip, from the console's own sensor: `total_mw` is the sum
   of the rails in milliwatts (about 48 W idle and 60 W in a game on a CFI-2116), `rails` the rails that carry power
   (`mw`, `mv`, `ma`). It is the chip only, not what the wall socket delivers. `null` without
@@ -120,7 +120,9 @@ Success answers carry `"result":"ok"`. `<ID>` must match `^[A-Z]{4}[0-9]{5}$`.
   except the one that reports the power state. A `/state` answer in that time has `in_app` false, `app` null, `temps`, `fan_raw`, `soc_power` and all
   `storage` values null and `payloads` and `drives` empty; `uptime_s`, `payload_uptime_s`, `apps_etag` (the last known one) and
   `fan` (the last known values) come from memory or the clock. The fan watcher, the app rescan and keep-awake pause
-  too, and continue when the state is `on` again. A console that cannot report its power state counts as `on`.
+  too, and continue when the state is `on` again. A console without the function that reports the power state
+  counts as `on`. When reading it fails, the last state read stays in force (with none yet: not `on`); after 60 s of
+  failed reads in a row it counts as `on` and `power_state` is `unknown`.
   See [Outside "on"](#outside-on) for what requests do then.
 
 ### Outside "on"

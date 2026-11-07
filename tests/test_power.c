@@ -50,16 +50,71 @@ static void test_power_state_names(void) {
   }
 }
 
-static void test_read_error_counts_as_on(void) {
+/* A failed read must not open the gate: the console may be falling asleep
+ * (spec: no console call outside "on"). */
+static void test_read_error_after_going_to_rest_stays_not_on(void) {
+  setup();
+  fake.power_state = 300;
+  power_tick(fake.mono_ms);
+  T_ASSERT(!power_is_on());
+  fake.power_state_rc = -1;
+  power_tick(fake.mono_ms + 250);
+  T_ASSERT(!power_is_on());
+  T_EQ_STR(power_state_name(), "going_to_rest");
+  power_tick(fake.mono_ms + 30000);
+  T_ASSERT(!power_is_on());
+}
+
+static void test_read_error_after_on_stays_on(void) {
+  setup();
+  power_tick(fake.mono_ms);
+  T_ASSERT(power_is_on());
+  fake.power_state_rc = -1;
+  power_tick(fake.mono_ms + 250);
+  T_ASSERT(power_is_on());
+  T_EQ_STR(power_state_name(), "on");
+}
+
+static void test_read_error_before_any_read_is_not_on(void) {
   setup();
   fake.power_state_rc = -1;
   power_tick(fake.mono_ms);
+  T_ASSERT(!power_is_on());
   T_EQ_STR(power_state_name(), "unknown");
-  T_ASSERT(power_is_on()); /* as before: a console without the function */
+}
+
+static void test_errors_for_60s_fall_back_to_on(void) {
+  int64_t t;
+  setup();
+  t = fake.mono_ms;
+  fake.power_state = 500;
+  power_tick(t);
+  fake.power_state_rc = -1;
+  for (int64_t ms = 250; ms < PS5H_POWER_FAIL_OPEN_S * 1000 + 250; ms += 250) {
+    power_tick(t + ms);
+  }
+  T_ASSERT(!power_is_on()); /* first failure at +250: 59.75 s of failures */
+  power_tick(t + PS5H_POWER_FAIL_OPEN_S * 1000 + 250);
+  T_ASSERT(power_is_on());
+  T_EQ_STR(power_state_name(), "unknown");
+  /* a good read counts again at once */
   fake.power_state_rc = 0;
+  power_tick(t + PS5H_POWER_FAIL_OPEN_S * 1000 + 500);
+  T_ASSERT(!power_is_on());
+  T_EQ_STR(power_state_name(), "rest");
+  /* and a new run of failures starts its own 60 s */
+  fake.power_state_rc = -1;
+  power_tick(t + PS5H_POWER_FAIL_OPEN_S * 1000 + 750);
+  T_ASSERT(!power_is_on());
+}
+
+static void test_missing_capability_counts_as_on(void) {
+  setup();
+  fake.power_state = 300;
   fake.caps.power_state = false;
   power_tick(fake.mono_ms);
-  T_ASSERT(power_is_on());
+  T_ASSERT(power_is_on()); /* as before v0.4: a console without the function */
+  T_EQ_STR(power_state_name(), "unknown");
 }
 
 static void test_state_is_on_before_first_tick(void) {
@@ -232,7 +287,11 @@ static void test_apps_scan_with_unknown_language_is_redone(void) {
 
 int main(void) {
   T_RUN(test_power_state_names);
-  T_RUN(test_read_error_counts_as_on);
+  T_RUN(test_read_error_after_going_to_rest_stays_not_on);
+  T_RUN(test_read_error_after_on_stays_on);
+  T_RUN(test_read_error_before_any_read_is_not_on);
+  T_RUN(test_errors_for_60s_fall_back_to_on);
+  T_RUN(test_missing_capability_counts_as_on);
   T_RUN(test_state_is_on_before_first_tick);
   T_RUN(test_keep_awake_ticks_every_240s_only_when_on);
   T_RUN(test_keep_awake_failure_does_not_spin);

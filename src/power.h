@@ -10,13 +10,16 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-/* Forget everything: state unknown (counts as "on"), keep-awake off. */
+/* Forget everything: state unknown (counts as "on" until the first tick),
+ * keep-awake off. */
 void power_init(void);
 /* Every pass of the main loop: reads the power state, and while keep-awake is
  * on and the console is "on", calls plat_keep_awake() every PS5H_KEEP_AWAKE_S. */
 void power_tick(int64_t now_ms);
-/* Last state read == 1000. A failed read, or a console without the function,
- * counts as "on" (as before v0.4). */
+/* Last good state read == 1000. A failed read keeps the last good state; with
+ * none yet it counts as not "on". Only after PS5H_POWER_FAIL_OPEN_S of
+ * failures in a row, or on a console without the function, it counts as "on"
+ * (as before v0.4). */
 bool power_is_on(void);
 /* "on" | "going_to_rest" | "rest" | "shutting_down" | "unknown" */
 const char *power_state_name(void);
