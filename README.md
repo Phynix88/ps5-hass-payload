@@ -6,7 +6,7 @@ apps with their names and covers, starts and closes apps, shows messages from Ho
 which payloads are running. If you allow it, it also puts the console into rest mode, powers it off and sets the
 temperature at which the fan speeds up.
 
-The Home Assistant side is a separate HACS integration, [ps5-hass](https://github.com/Phynix88/ps5-hass), that only
+The Home Assistant side is a separate integration, [ps5-hass](https://github.com/Phynix88/ps5-hass), that only
 uses the HTTP API described in [API.md](API.md).
 
 - No MQTT broker, no PSN account, no cloud.
@@ -55,7 +55,7 @@ after a restart).
 
 ## Pairing
 
-Install the [ps5-hass integration](https://github.com/Phynix88/ps5-hass) first (HACS, see its README). Then add
+Install the [ps5-hass integration](https://github.com/Phynix88/ps5-hass) first (Marketplace or HACS, see its README). Then add
 the integration in Home Assistant. It finds "PS5 …" on its own, or you enter the IP address. The console shows
 `ps5-hass pairing code: 123456` on the TV; type the code into Home Assistant within two minutes. The notification
 also appears with "Do Not Disturb" switched on.
