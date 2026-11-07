@@ -279,5 +279,6 @@ fields and endpoints go away in a later version.
 - At most 8 connections at the same time; a ninth is closed at once.
 - The request must be complete within 3 s, the answer within 10 s.
 - Headers up to 8 KB, body up to 4096 bytes, header names are case-insensitive.
-- In rest mode the payload cannot be reached. Home Assistant detects rest mode through Sony's own status query
-  (UDP 9302). After waking up, `/state` answers again within 10 s.
+- In rest mode the payload normally cannot be reached; while the console is going to rest it may still answer, with
+  `409 not_on` for requests that need the console (see [Outside "on"](#outside-on)). Home Assistant detects rest
+  mode through Sony's own status query (UDP 9302). After waking up, `/state` answers again within 10 s.
